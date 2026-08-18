@@ -12,89 +12,142 @@ import { useApiMutation } from "@/hooks/useApi";
 import { useContext } from "react";
 import { AuthContext } from "@/providers/AuthProvider";
 import { toast } from "sonner";
-import { LogIn, ArrowRight, ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowRight, ArrowLeft, ShieldCheck } from "lucide-react";
+import { AxiosError } from "axios";
 
-// تعریف schema برای مرحله اول
+// تایپ‌های دقیق بر اساس پاسخ سرور
+interface User {
+  id: number;
+  firstname: string;
+  lastname: string;
+  phone: string;
+  permissions: string[];
+}
+
+interface Tokens {
+  access_token: string;
+  refresh_token: string;
+}
+
+interface VerifyOtpResponse {
+  tokens: Tokens;
+  user: User;
+}
+
+interface RequestOtpResponse {
+  success: boolean;
+  message?: string;
+}
+
+// تایپ کاربر برای AuthContext (شامل permissions)
+interface AuthUser {
+  id: string;
+  name: string;
+  phone: string;
+  permissions?: string[]; // ✅ اضافه شد
+}
+
+// schema مرحله اول
 const loginStep1Schema = z.object({
   phone: z.string().min(11, "شماره موبایل ۱۱ رقم باشد").max(11, "شماره موبایل ۱۱ رقم باشد"),
-  password: z.string().min(6, "رمز عبور حداقل ۶ کاراکتر"),
 });
 
-// تعریف schema برای مرحله دوم
+// schema مرحله دوم
 const loginStep2Schema = z.object({
-  code: z.string().min(4, "کد تأیید معتبر نیست").max(6, "کد تأیید معتبر نیست"),
+  otp: z.string().min(4, "کد تأیید معتبر نیست").max(6, "کد تأیید معتبر نیست"),
 });
 
 type Step1Values = z.infer<typeof loginStep1Schema>;
 type Step2Values = z.infer<typeof loginStep2Schema>;
+
+// تبدیل پاسخ سرور به فرمت مورد انتظار AuthContext
+function mapUserToAuthUser(user: User): AuthUser {
+  const fullName = `${user.firstname} ${user.lastname}`.trim();
+  return {
+    id: String(user.id),
+    name: fullName || "کاربر",
+    phone: user.phone,
+    permissions: user.permissions || [], // ✅ اضافه شد
+  };
+}
 
 export default function LoginPage() {
   const router = useRouter();
   const auth = useContext(AuthContext);
 
   const [step, setStep] = useState<1 | 2>(1);
-  const [credentials, setCredentials] = useState<Step1Values | null>(null);
+  const [phone, setPhone] = useState<string>("");
 
-  // Mutation مرحله اول
-  const loginMutation = useApiMutation<
-    { success: boolean },
-    { phone: string; password: string }
-  >("/auth/login", "POST");
+  const requestOtpMutation = useApiMutation<RequestOtpResponse, { phone: string }>(
+    "/auth/send-otp",
+    "POST"
+  );
 
-  // Mutation مرحله دوم
-  const verifyMutation = useApiMutation<
-    { access_token: string; refresh_token: string; user: any },
-    { phone: string; password: string; code: string }
-  >("/auth/verify-otp", "POST");
+  const verifyOtpMutation = useApiMutation<VerifyOtpResponse, { phone: string; otp: string }>(
+    "/auth/verify-otp",
+    "POST"
+  );
 
-  // فرم مرحله اول
   const step1Form = useForm<Step1Values>({
     resolver: zodResolver(loginStep1Schema),
-    defaultValues: { phone: "", password: "" },
+    defaultValues: { phone: "" },
   });
 
-  // فرم مرحله دوم
   const step2Form = useForm<Step2Values>({
     resolver: zodResolver(loginStep2Schema),
-    defaultValues: { code: "" },
+    defaultValues: { otp: "" },
   });
+
+  const handleAxiosError = (error: unknown, fallback: string): string => {
+    if (error instanceof AxiosError) {
+      const data = error.response?.data as { error?: string; message?: string } | undefined;
+      return data?.error || data?.message || fallback;
+    }
+    return fallback;
+  };
 
   const onSubmitStep1 = async (data: Step1Values) => {
     try {
-      await loginMutation.mutateAsync({ phone: data.phone, password: data.password });
-      setCredentials(data); // ذخیره اطلاعات برای مرحله بعد
+      await requestOtpMutation.mutateAsync({ phone: data.phone });
+      setPhone(data.phone);
       setStep(2);
       toast.success("کد تأیید ارسال شد");
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || "شماره موبایل یا رمز عبور اشتباه است");
+    } catch (error) {
+      toast.error(handleAxiosError(error, "شماره موبایل نامعتبر است"));
     }
   };
 
   const onSubmitStep2 = async (data: Step2Values) => {
-    if (!credentials) return;
     try {
-      const response = await verifyMutation.mutateAsync({
-        phone: credentials.phone,
-        password: credentials.password,
-        code: data.code,
+      const response = await verifyOtpMutation.mutateAsync({
+        phone: phone,
+        otp: data.otp,
       });
 
-      // ذخیره‌سازی توکن‌ها و کاربر در AuthContext
-      auth?.login(
-        response.access_token,
-        response.refresh_token,
-        response.user
-      );
+      const tokens = response.tokens;
+      const user = response.user;
+
+      if (!tokens?.access_token || !tokens?.refresh_token || !user) {
+        toast.error("پاسخ سرور نامعتبر است");
+        return;
+      }
+
+      // تبدیل user به فرمت AuthContext با permissions
+      const authUser = mapUserToAuthUser(user);
+
+      // ذخیره‌سازی در AuthContext
+      auth?.login(tokens.access_token, tokens.refresh_token, authUser);
 
       toast.success("ورود موفقیت‌آمیز بود");
       router.push("/dashboard");
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || "کد تأیید نامعتبر است");
+    } catch (error) {
+      toast.error(handleAxiosError(error, "کد تأیید نامعتبر است"));
     }
   };
 
   const goBack = () => {
     setStep(1);
+    setPhone("");
     step2Form.reset();
   };
 
@@ -103,14 +156,13 @@ export default function LoginPage() {
       <Card className="w-full max-w-md rounded-none shadow-lg">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold text-blue-800">
-            {step === 1 ? "ورود به پنل مدیریت" : "تأیید هویت"}
+            {step === 1 ? "ورود به پنل مدیریت" : "تأیید کد"}
           </CardTitle>
           <p className="text-sm text-muted-foreground">Board Kingdom</p>
         </CardHeader>
         <CardContent>
           {step === 1 ? (
             <form onSubmit={step1Form.handleSubmit(onSubmitStep1)} className="space-y-6">
-              {/* شماره موبایل */}
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">شماره موبایل *</label>
                 <Controller
@@ -127,29 +179,9 @@ export default function LoginPage() {
                   )}
                 />
                 {step1Form.formState.errors.phone && (
-                  <p className="text-xs text-red-500">{step1Form.formState.errors.phone.message}</p>
-                )}
-              </div>
-
-              {/* رمز عبور */}
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">رمز عبور *</label>
-                <Controller
-                  name="password"
-                  control={step1Form.control}
-                  render={({ field }) => (
-                    <AppInput
-                      type="password"
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder="••••••"
-                      dir="ltr"
-                      className="h-12"
-                    />
-                  )}
-                />
-                {step1Form.formState.errors.password && (
-                  <p className="text-xs text-red-500">{step1Form.formState.errors.password.message}</p>
+                  <p className="text-xs text-red-500">
+                    {step1Form.formState.errors.phone.message}
+                  </p>
                 )}
               </div>
 
@@ -157,23 +189,22 @@ export default function LoginPage() {
                 type="submit"
                 variant="blue"
                 className="w-full h-12 text-base"
-                loading={loginMutation.isPending}
+                loading={requestOtpMutation.isPending}
               >
                 <ArrowRight className="ml-2 h-5 w-5" />
-                ادامه
+                دریافت کد تأیید
               </AppButton>
             </form>
           ) : (
             <form onSubmit={step2Form.handleSubmit(onSubmitStep2)} className="space-y-6">
               <div className="text-center text-sm text-muted-foreground">
-                کد تأیید به شماره <span dir="ltr">{credentials?.phone}</span> ارسال شد.
+                کد تأیید به شماره <span dir="ltr">{phone}</span> ارسال شد.
               </div>
 
-              {/* کد تأیید */}
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">کد تأیید *</label>
                 <Controller
-                  name="code"
+                  name="otp"
                   control={step2Form.control}
                   render={({ field }) => (
                     <AppInput
@@ -186,8 +217,10 @@ export default function LoginPage() {
                     />
                   )}
                 />
-                {step2Form.formState.errors.code && (
-                  <p className="text-xs text-red-500">{step2Form.formState.errors.code.message}</p>
+                {step2Form.formState.errors.otp && (
+                  <p className="text-xs text-red-500">
+                    {step2Form.formState.errors.otp.message}
+                  </p>
                 )}
               </div>
 
@@ -205,7 +238,7 @@ export default function LoginPage() {
                   type="submit"
                   variant="blue"
                   className="h-12 flex-1"
-                  loading={verifyMutation.isPending}
+                  loading={verifyOtpMutation.isPending}
                 >
                   <ShieldCheck className="ml-2 h-5 w-5" />
                   ورود

@@ -34,13 +34,12 @@ function clearTokens() {
   document.cookie = "auth_token=; path=/; max-age=0";
 }
 
-// ==================== axios instance با baseURL خارجی ====================
+// ==================== axios instance ====================
 export const apiClient = axios.create({
-  baseURL: "http://localhost:8080", // ⬅️ تغییر به آدرس بک‌اند واقعی
+  baseURL: "http://localhost:8080/api/v1",
   headers: { "Content-Type": "application/json" },
 });
 
-// Request interceptor: افزودن access token
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const tokens = getTokens();
@@ -49,12 +48,9 @@ apiClient.interceptors.request.use(
     }
     return config;
   },
-  (error: AxiosError) => {
-    return Promise.reject(error);
-  }
+  (error: AxiosError) => Promise.reject(error)
 );
 
-// Response interceptor با مدیریت 401 و refresh
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (value?: unknown) => void;
@@ -101,10 +97,9 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post<Tokens>(
-          "http://localhost:8080/auth/refresh", // ⬅️ مسیر کامل refresh
-          { refresh_token: tokens.refresh_token }
-        );
+        const { data } = await apiClient.post<Tokens>("/auth/refresh", {
+          refresh_token: tokens.refresh_token,
+        });
         setTokens(data);
         processQueue(null, data.access_token);
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
@@ -126,14 +121,44 @@ apiClient.interceptors.response.use(
 // ==================== توابع کمکی ====================
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-function buildQueryString(params?: Record<string, any>): string {
+function toStringValue(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const items = value.map((item) => {
+      if (typeof item === "object" && item !== null) {
+        const maybeValue = (item as { value?: unknown }).value;
+        const maybeId = (item as { id?: unknown }).id;
+        return String(maybeValue ?? maybeId ?? "");
+      }
+      return String(item);
+    });
+    return items.join(",");
+  }
+  if (typeof value === "object") {
+    const maybeValue = (value as { value?: unknown }).value;
+    const maybeId = (value as { id?: unknown }).id;
+    return String(maybeValue ?? maybeId ?? "");
+  }
+  return null;
+}
+
+function buildQueryString(params?: Record<string, unknown>): string {
   if (!params) return "";
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value === null || value === undefined || value === "") return;
     if (Array.isArray(value)) {
-      if (value.length === 0) return;
-      searchParams.set(key, value.join(","));
+      const items = value.map((item) =>
+        typeof item === "object" && item !== null
+          ? String((item as Record<string, unknown>).value ?? (item as Record<string, unknown>).id ?? "")
+          : String(item)
+      );
+      searchParams.set(key, items.join(","));
+    } else if (typeof value === "object") {
+      const item = value as Record<string, unknown>;
+      searchParams.set(key, String(item.value ?? item.id ?? ""));
     } else {
       searchParams.set(key, String(value));
     }
@@ -143,11 +168,15 @@ function buildQueryString(params?: Record<string, any>): string {
 }
 
 // ==================== هوک Query ====================
-export function useApiQuery<TData = any>(
+export function useApiQuery<TData = unknown>(
   url: string,
   queryKey: string[],
-  params?: Record<string, any>,
-  options?: { enabled?: boolean; staleTime?: number; refetchOnMount?: boolean }
+  params?: Record<string, unknown>,
+  options?: {
+    enabled?: boolean;
+    staleTime?: number;
+    refetchOnMount?: boolean;
+  }
 ) {
   const fullUrl = `${url}${buildQueryString(params)}`;
 
@@ -164,7 +193,7 @@ export function useApiQuery<TData = any>(
 }
 
 // ==================== هوک Mutation ====================
-export function useApiMutation<TData = any, TBody = Record<string, any>>(
+export function useApiMutation<TData = unknown, TBody = unknown>(
   url: string,
   method: HttpMethod,
   queryKeyToInvalidate?: string[]
@@ -192,20 +221,46 @@ export function useApiMutation<TData = any, TBody = Record<string, any>>(
 
 // ==================== کارخانه ساخت هوک‌ها ====================
 export function createApiHooks(resourcePath: string) {
-  const baseUrl = `/${resourcePath}`; // چون baseURL خارجی است، مسیر از / شروع می‌شود
+  const baseUrl = `/${resourcePath}`;
+
   return {
-    useList: (params?: Record<string, any>, options?: any) =>
-      useApiQuery<{ data: any[]; total: number }>(baseUrl, [resourcePath], params, options),
-    useGet: (id: string | number, options?: any) =>
-      useApiQuery<any>(`${baseUrl}/${id}`, [resourcePath, String(id)], undefined, options),
-    useCreate: (queryKeyToInvalidate?: string[]) =>
-      useApiMutation<any, any>(baseUrl, "POST", queryKeyToInvalidate ?? [resourcePath]),
-    useUpdate: (id: string | number, queryKeyToInvalidate?: string[]) =>
-      useApiMutation<any, any>(`${baseUrl}/${id}`, "PUT", queryKeyToInvalidate ?? [resourcePath]),
-    useDelete: (id: string | number, queryKeyToInvalidate?: string[]) =>
-      useApiMutation<any, void>(`${baseUrl}/${id}`, "DELETE", queryKeyToInvalidate ?? [resourcePath]),
-    useChangeActive: (id: string | number, queryKeyToInvalidate?: string[]) =>
-      useApiMutation<any, { is_active: boolean }>(
+    useList: <T = unknown>(
+      params?: Record<string, unknown>,
+      options?: {
+        enabled?: boolean;
+        staleTime?: number;
+        refetchOnMount?: boolean;
+      }
+    ) =>
+      useApiQuery<{ data: T[]; total: number }>(baseUrl, [resourcePath], params, options),
+
+    useGet: <T = unknown>(
+      id: string | number,
+      options?: {
+        enabled?: boolean;
+        staleTime?: number;
+        refetchOnMount?: boolean;
+      }
+    ) =>
+      useApiQuery<T>(`${baseUrl}/${id}`, [resourcePath, String(id)], undefined, options),
+
+    useCreate: <TData = unknown, TBody = unknown>(queryKeyToInvalidate?: string[]) =>
+      useApiMutation<TData, TBody>(baseUrl, "POST", queryKeyToInvalidate ?? [resourcePath]),
+
+    useUpdate: <TData = unknown, TBody = unknown>(
+      id: string | number,
+      queryKeyToInvalidate?: string[]
+    ) =>
+      useApiMutation<TData, TBody>(`${baseUrl}/${id}`, "PUT", queryKeyToInvalidate ?? [resourcePath]),
+
+    useDelete: <TData = unknown>(id: string | number, queryKeyToInvalidate?: string[]) =>
+      useApiMutation<TData, void>(`${baseUrl}/${id}`, "DELETE", queryKeyToInvalidate ?? [resourcePath]),
+
+    useChangeActive: <TData = unknown>(
+      id: string | number,
+      queryKeyToInvalidate?: string[]
+    ) =>
+      useApiMutation<TData, { is_active: boolean }>(
         `${baseUrl}/${id}/active`,
         "PATCH",
         queryKeyToInvalidate ?? [resourcePath]

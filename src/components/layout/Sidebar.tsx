@@ -39,40 +39,49 @@ import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { setMobileSidebarOpen, toggleSidebarCollapsed } from "@/store/slices/uiSlice";
+import { useAuth } from "@/hooks/useAuth";
 
+// تایپ آیتم منو با permission
 type MenuItem = {
   label: string;
   icon?: React.ElementType;
   path?: string;
   href?: string;
   children?: MenuItem[];
+  permission?: string; // ⬅️ مجوز لازم برای نمایش
 };
 
+// منوی کامل با فیلد permission برای هر آیتم
 const menuItems: MenuItem[] = [
   {
     label: "داشبورد",
     icon: LayoutDashboard,
     href: "/dashboard",
+    permission: "dashboard.view",
   },
   {
     label: "محصولات",
     icon: Package,
     path: "/products",
+    permission: "products.view",
     children: [
       {
         label: "محصولات",
         icon: ShoppingBag,
         href: "/products",
+        permission: "products.view",
       },
       {
         label: "دسته‌بندی‌ها",
         icon: Tags,
         href: "/products/categories",
+        permission: "categories.view",
       },
       {
         label: "ویژگی‌ها",
         icon: SlidersHorizontal,
         href: "/products/attributes",
+        permission: "attributes.view",
       },
     ],
   },
@@ -80,16 +89,19 @@ const menuItems: MenuItem[] = [
     label: "سفارشات",
     icon: ShoppingCart,
     path: "/orders",
+    permission: "orders.view",
     children: [
       {
         label: "همه سفارشات",
         icon: ShoppingCart,
         href: "/orders",
+        permission: "orders.view",
       },
       {
         label: "مرجوعی‌ها",
         icon: RotateCcw,
         href: "/orders/returns",
+        permission: "returns.view",
       },
     ],
   },
@@ -97,31 +109,37 @@ const menuItems: MenuItem[] = [
     label: "کاربران",
     icon: Users,
     path: "/users",
+    permission: "users.view",
     children: [
       {
         label: "کاربران",
         icon: Users,
         href: "/users",
+        permission: "users.view",
       },
       {
         label: "آدرس‌ها",
         icon: MapPin,
         href: "/users/addresses",
+        permission: "addresses.view",
       },
       {
         label: "دسترسی‌ها",
         icon: ShieldCheck,
         path: "/users/permissions",
+        permission: "permissions.view",
         children: [
           {
             label: "دسترسی‌ها",
             icon: KeyRound,
             href: "/users/permissions",
+            permission: "permissions.view",
           },
           {
             label: "نقش‌ها",
             icon: UserCog,
             href: "/users/permissions/roles",
+            permission: "roles.view",
           },
         ],
       },
@@ -131,21 +149,25 @@ const menuItems: MenuItem[] = [
     label: "مالی",
     icon: CreditCard,
     path: "/finance",
+    permission: "finance.view",
     children: [
       {
         label: "پرداخت‌ها",
         icon: CreditCard,
         href: "/finance/payments",
+        permission: "payments.view",
       },
       {
         label: "تراکنش‌ها",
         icon: Receipt,
         href: "/finance/transactions",
+        permission: "transactions.view",
       },
       {
         label: "تخفیف‌ها",
         icon: Percent,
-        href: "/finance/discounts", // ⬅️ تخفیف‌ها زیرمجموعه مالی
+        href: "/finance/discounts",
+        permission: "discounts.view",
       },
     ],
   },
@@ -153,23 +175,50 @@ const menuItems: MenuItem[] = [
     label: "حمل‌ونقل",
     icon: Truck,
     href: "/shipping",
+    permission: "shipping.view",
   },
   {
     label: "گزارش‌ها",
     icon: BarChart3,
     href: "/reports",
+    permission: "reports.view",
   },
   {
     label: "پیام‌ها",
     icon: MessageSquare,
     href: "/messages",
+    permission: "messages.view",
   },
   {
     label: "تنظیمات",
     icon: Settings,
     href: "/settings",
+    permission: "settings.view",
   },
 ];
+
+// تابع فیلتر کردن منو بر اساس مجوز
+function filterMenuItems(
+  items: MenuItem[],
+  hasPermission: (permission: string) => boolean
+): MenuItem[] {
+  return items.reduce((acc, item) => {
+    // اگر مجوز دارد و کاربر آن را ندارد، کلاً حذف کن
+    if (item.permission && !hasPermission(item.permission)) {
+      return acc;
+    }
+
+    // اگر زیرمنو دارد، آن را فیلتر کن
+    if (item.children) {
+      const children = filterMenuItems(item.children, hasPermission);
+      if (children.length === 0) return acc;
+      return [...acc, { ...item, children }];
+    }
+
+    // برگ بدون مجوز یا با مجوز تأیید شده
+    return [...acc, item];
+  }, [] as MenuItem[]);
+}
 
 function SidebarMenuItem({
   item,
@@ -282,6 +331,10 @@ export default function Sidebar() {
   const { sidebarCollapsed, mobileSidebarOpen } = useSelector(
     (state: RootState) => state.ui
   );
+  const { hasPermission } = useAuth(); // ✅ دریافت تابع بررسی مجوز
+
+  // فیلتر منو بر اساس دسترسی‌های کاربر
+  const visibleMenuItems = filterMenuItems(menuItems, hasPermission);
 
   return (
     <>
@@ -309,7 +362,7 @@ export default function Sidebar() {
           )}
         </div>
         <nav className="flex flex-col w-full">
-          {menuItems.map((item, idx) => (
+          {visibleMenuItems.map((item, idx) => (
             <SidebarMenuItem
               key={idx}
               item={item}
@@ -331,7 +384,7 @@ export default function Sidebar() {
             </h2>
           </div>
           <nav className="flex flex-col w-full">
-            {menuItems.map((item, idx) => (
+            {visibleMenuItems.map((item, idx) => (
               <SidebarMenuItem key={idx} item={item} collapsed={false} />
             ))}
           </nav>

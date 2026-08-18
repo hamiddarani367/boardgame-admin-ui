@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -8,70 +9,96 @@ import { AppInput } from "@/components/shared/AppInput";
 import { SelectInput, Option } from "@/components/shared/SelectInput";
 import { AppButton } from "@/components/shared/AppButton";
 import { ImageUploader } from "@/components/shared/ImageUploader";
-import { useRoles } from "@/hooks/useRoles";
+import { useRoles, Role } from "@/hooks/useRoles";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+// تعریف schema
 const userFormSchema = z.object({
-  name: z.string().min(2, "نام حداقل ۲ حرف باید داشته باشد"),
-  mobile: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸)"),
-  roles: z.array(z.string()).min(1, "حداقل یک نقش انتخاب کنید"),
-  status: z.string().min(1, "وضعیت را انتخاب کنید"),
-  images: z.array(z.string()),
+  first_name: z.string().min(2, "نام حداقل ۲ حرف باید داشته باشد"),
+  last_name: z.string().min(2, "نام خانوادگی حداقل ۲ حرف باید داشته باشد"),
+  phone: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸)"),
+  email: z.string().email("ایمیل معتبر نیست").or(z.literal("")),
+  role_ids: z.array(z.number()),
+  enabled: z.string().min(1, "وضعیت را انتخاب کنید"),
+  image: z.string(),
 });
 
 type UserFormValues = z.infer<typeof userFormSchema>;
 
 interface UserFormProps {
-  initialData?: any;
+  initialData?: {
+    id?: number;
+    first_name: string;
+    last_name: string;
+    phone: string;
+    email?: string;
+    role_ids?: number[];
+    enabled: boolean;
+    image?: string;
+  };
   isEdit?: boolean;
-  onSubmit: (data: any) => Promise<void> | void;
+  onSubmit: (data: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+    email: string | null;
+    role_ids: number[];
+    enabled: boolean;
+    image: string | null;
+  }) => Promise<void> | void;
 }
+
+const statusOptions: Option[] = [
+  { value: "true", label: "فعال" },
+  { value: "false", label: "غیرفعال" },
+];
 
 export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProps) {
   const router = useRouter();
   const { data: roles, isLoading: rolesLoading } = useRoles();
 
-  const roleOptions: Option[] =
-    roles?.map((r: any) => ({
-      value: String(r.id),
-      label: r.title,
-      ...r,
-    })) || [];
-
-  const statusOptions: Option[] = [
-    { value: "active", label: "فعال" },
-    { value: "inactive", label: "غیرفعال" },
-  ];
-
-  const initialRoles: string[] = initialData?.roles
-    ? initialData.roles.map((role: any) => String(role.id))
-    : [];
-
-  const initialStatus: string = initialData?.is_active ? "active" : "inactive";
-  const initialImages: string[] = initialData?.images || [];
-
   const {
     control,
     handleSubmit,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
     defaultValues: {
-      name: initialData?.name || "",
-      mobile: initialData?.mobile || "",
-      roles: initialRoles,
-      status: initialStatus,
-      images: initialImages,
+      first_name: "",
+      last_name: "",
+      phone: "",
+      email: "",
+      role_ids: [],
+      enabled: "true",
+      image: "",
     },
   });
 
+  // به‌روزرسانی فرم با داده‌های اولیه
+  useEffect(() => {
+    if (initialData) {
+      reset({
+        first_name: initialData.first_name || "",
+        last_name: initialData.last_name || "",
+        phone: initialData.phone || "",
+        email: initialData.email || "",
+        role_ids: initialData.role_ids || [],
+        enabled: initialData.enabled ? "true" : "false",
+        image: initialData.image || "",
+      });
+    }
+  }, [initialData, reset]);
+
   const onSubmitForm: SubmitHandler<UserFormValues> = async (data) => {
     const payload = {
-      name: data.name,
-      mobile: data.mobile,
-      role_ids: data.roles.map(Number),
-      is_active: data.status === "active",
-      images: data.images,
+      first_name: data.first_name,
+      last_name: data.last_name,
+      phone: data.phone,
+      email: data.email || null,
+      role_ids: data.role_ids,
+      enabled: data.enabled === "true",
+      image: data.image || null,
     };
     await onSubmit(payload);
   };
@@ -88,20 +115,33 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">نام *</label>
               <Controller
-                name="name"
+                name="first_name"
                 control={control}
                 render={({ field }) => (
                   <AppInput value={field.value} onChange={field.onChange} placeholder="نام کاربر" />
                 )}
               />
-              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+              {errors.first_name && <p className="text-xs text-red-500">{errors.first_name.message}</p>}
+            </div>
+
+            {/* نام خانوادگی */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">نام خانوادگی *</label>
+              <Controller
+                name="last_name"
+                control={control}
+                render={({ field }) => (
+                  <AppInput value={field.value} onChange={field.onChange} placeholder="نام خانوادگی" />
+                )}
+              />
+              {errors.last_name && <p className="text-xs text-red-500">{errors.last_name.message}</p>}
             </div>
 
             {/* موبایل */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">موبایل *</label>
               <Controller
-                name="mobile"
+                name="phone"
                 control={control}
                 render={({ field }) => (
                   <AppInput
@@ -112,77 +152,97 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
                   />
                 )}
               />
-              {errors.mobile && <p className="text-xs text-red-500">{errors.mobile.message}</p>}
+              {errors.phone && <p className="text-xs text-red-500">{errors.phone.message}</p>}
             </div>
 
-            {/* نقش‌ها */}
+            {/* ایمیل */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">ایمیل</label>
+              <Controller
+                name="email"
+                control={control}
+                render={({ field }) => (
+                  <AppInput
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="example@domain.com"
+                    dir="ltr"
+                  />
+                )}
+              />
+              {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+            </div>
+
+            {/* نقش‌ها (چندانتخابی) */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">نقش‌ها *</label>
               <Controller
-                name="roles"
+                name="role_ids"
                 control={control}
                 render={({ field }) => (
                   <SelectInput
-                    options={roleOptions}
-                    value={field.value}
+                    options={roles || []}
+                    value={field.value.map(String)}
                     onChange={(val) => {
-                      const selectedIds = Array.isArray(val)
-                        ? val.map((opt: any) => String(opt.value))
-                        : [];
-                      field.onChange(selectedIds);
+                      const selected = Array.isArray(val) ? val : [];
+                      field.onChange(selected.map(Number));
                     }}
                     isMulti
                     placeholder="انتخاب نقش‌ها"
                     className="w-full"
                     valueKey="id"
-                    labelKey="title"
+                    labelKey="name"
                   />
                 )}
               />
               {rolesLoading && (
                 <p className="text-xs text-muted-foreground">در حال بارگذاری نقش‌ها...</p>
               )}
-              {errors.roles && <p className="text-xs text-red-500">{errors.roles.message}</p>}
+              {errors.role_ids && <p className="text-xs text-red-500">{errors.role_ids.message}</p>}
             </div>
 
             {/* وضعیت */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">وضعیت *</label>
               <Controller
-                name="status"
+                name="enabled"
                 control={control}
                 render={({ field }) => (
                   <SelectInput
-                    options={statusOptions}
+                    options={[
+                      { value: "true", label: "فعال" },
+                      { value: "false", label: "غیرفعال" },
+                    ]}
                     value={field.value}
                     onChange={(val) => {
-                      const selectedOption = val as Option | null;
-                      field.onChange(selectedOption ? selectedOption.value : "");
+                      const selected = val as string;
+                      field.onChange(selected || "true");
                     }}
                     placeholder="انتخاب وضعیت"
                     className="w-full"
                   />
                 )}
               />
-              {errors.status && <p className="text-xs text-red-500">{errors.status.message}</p>}
+              {errors.enabled && <p className="text-xs text-red-500">{errors.enabled.message}</p>}
             </div>
 
-            {/* تصاویر */}
+            {/* تصویر پروفایل */}
             <div className="flex flex-col gap-2 md:col-span-2">
-              <label className="text-sm font-medium">تصاویر</label>
+              <label className="text-sm font-medium">تصویر پروفایل</label>
               <Controller
-                name="images"
+                name="image"
                 control={control}
                 render={({ field }) => (
                   <ImageUploader
-                    multiple
-                    maxFiles={5}
-                    value={field.value || []}
-                    onChange={field.onChange}
+                    multiple={false}
+                    maxFiles={1}
+                    value={field.value ? [field.value] : []}
+                    onChange={(urls) => field.onChange(urls[0] || "")}
+                    folder="users" 
                   />
                 )}
               />
-              {errors.images && <p className="text-xs text-red-500">{errors.images.message}</p>}
+              {errors.image && <p className="text-xs text-red-500">{errors.image.message}</p>}
             </div>
           </div>
 

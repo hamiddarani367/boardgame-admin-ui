@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useUsers } from "@/hooks/useUsers";
+import { useApiQuery, apiClient } from "@/hooks/useApi";
 import { DataTable } from "@/components/shared/DataTable";
 import { FilterBar, type FilterField } from "@/components/shared/FilterBar";
 import { AppButton } from "@/components/shared/AppButton";
@@ -15,16 +15,100 @@ import persian from "react-date-object/calendars/persian";
 import persian_fa from "react-date-object/locales/persian_fa";
 import Swal from "sweetalert2";
 import { toast } from "sonner";
+import { AxiosError } from "axios";
+import { useRoles } from "@/hooks/useRoles";
 
-const exportToCSV = (users: any[]) => {
+// ==================== تایپ‌ها ====================
+interface User {
+  id: number;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email: string;
+  enabled: boolean;
+  created_at?: string;
+}
+
+interface UsersResponse {
+  users: User[];
+  total: number;
+}
+
+interface DateRange {
+  from: DateObject | null;
+  to: DateObject | null;
+}
+
+type FilterValue = string | string[] | DateRange | null;
+type Filters = Record<string, FilterValue>;
+
+interface SortState {
+  key: string;
+  order: "asc" | "desc";
+}
+
+// ==================== سریالایز فیلترها ====================
+function serializeFilterValue(value: FilterValue): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    return value.join(",");
+  }
+  if (typeof value === "object" && "from" in value && "to" in value) {
+    return null; // در updateURL پردازش می‌شود
+  }
+  return String(value);
+}
+
+function deserializeFilters(searchParams: URLSearchParams): Filters {
+  const filters: Filters = {};
+
+  searchParams.forEach((value, key) => {
+    if (["page", "limit", "sortBy", "sortOrder"].includes(key)) return;
+
+    if (key.endsWith("_from") || key.endsWith("_to")) {
+      const mainKey = key.replace(/_from$|_to$/, "");
+      if (!filters[mainKey]) {
+        filters[mainKey] = { from: null, to: null } as DateRange;
+      }
+      const range = filters[mainKey] as DateRange;
+      if (key.endsWith("_from")) {
+        range.from = new DateObject({
+          date: new Date(value),
+          calendar: persian,
+          locale: persian_fa,
+        });
+      } else {
+        range.to = new DateObject({
+          date: new Date(value),
+          calendar: persian,
+          locale: persian_fa,
+        });
+      }
+      return;
+    }
+
+    if (value.includes(",")) {
+      filters[key] = value.split(",");
+    } else {
+      filters[key] = value;
+    }
+  });
+
+  return filters;
+}
+
+// ==================== خروجی CSV ====================
+const exportToCSV = (users: User[]) => {
   if (!users.length) return;
-  const headers = ["شناسه", "نام", "موبایل", "نقش‌ها", "وضعیت"];
-  const rows = users.map((u) => [
-    u.id,
-    u.name,
-    u.mobile,
-    u.roles?.map((r: any) => r.title).join("، ") || "-",
-    u.is_active ? "فعال" : "غیرفعال",
+  const headers = ["شناسه", "نام", "نام خانوادگی", "موبایل", "ایمیل", "وضعیت"];
+  const rows = users.map((user) => [
+    user.id,
+    user.first_name,
+    user.last_name,
+    user.phone,
+    user.email,
+    user.enabled ? "فعال" : "غیرفعال",
   ]);
   const csv =
     "data:text/csv;charset=utf-8," +
@@ -44,91 +128,64 @@ export default function UsersPage() {
 
   const initialPage = Number(searchParams.get("page")) || 1;
   const initialLimit = Number(searchParams.get("limit")) || 10;
-  const initialSortBy = searchParams.get("sortBy") || "name";
+  const initialSortBy = searchParams.get("sortBy") || "id";
   const initialSortOrder =
     (searchParams.get("sortOrder") as "asc" | "desc") || "asc";
 
-  const initialFilters: Record<string, any> = {};
-  searchParams.forEach((value, key) => {
-    if (["page", "limit", "sortBy", "sortOrder"].includes(key)) return;
+  const initialFilters = deserializeFilters(searchParams);
 
-    if (key.endsWith("_from") || key.endsWith("_to")) {
-      const mainKey = key.replace(/_from$|_to$/, "");
-      if (!initialFilters[mainKey]) initialFilters[mainKey] = { from: null, to: null };
-      if (key.endsWith("_from")) {
-        initialFilters[mainKey].from = new DateObject({
-          date: new Date(value),
-          calendar: persian,
-          locale: persian_fa,
-        });
-      } else {
-        initialFilters[mainKey].to = new DateObject({
-          date: new Date(value),
-          calendar: persian,
-          locale: persian_fa,
-        });
-      }
-    } else {
-      initialFilters[key] = value.includes(",") ? value.split(",") : value;
-    }
-  });
-
-  const [sort, setSort] = useState<{ key: string; order: "asc" | "desc" }>({
+  const [sort, setSort] = useState<SortState>({
     key: initialSortBy,
     order: initialSortOrder,
   });
   const [page, setPage] = useState(initialPage);
   const [limit, setLimit] = useState(initialLimit);
-  const [filters, setFilters] = useState<Record<string, any>>(initialFilters);
+  const [filters, setFilters] = useState<Filters>(initialFilters);
 
-  const { data, isLoading, refetch } = useUsers({ page, limit, sort, filters });
+  // دریافت لیست کاربران
+  const { data, isLoading } = useApiQuery<UsersResponse>(
+    "/users",
+    ["users"],
+    {
+      page,
+      limit,
+      sortBy: sort.key,
+      sortOrder: sort.order,
+      ...filters,
+    }
+  );
 
-  useEffect(() => {
-    refetch();
-  }, []);
+  const { data: rolesData } = useRoles();
+    const roleOptions = (rolesData || []).map((role) => ({
+      value: String(role.id),
+      label: role.name,
+      ...role,
+    }));
 
+  // همگام‌سازی URL
   const updateURL = useCallback(
-    (
-      p: number,
-      l: number,
-      s: { key: string; order: "asc" | "desc" },
-      f: Record<string, any>
-    ) => {
+    (p: number, l: number, s: SortState, f: Filters) => {
       const params = new URLSearchParams();
       if (p > 1) params.set("page", String(p));
       if (l !== 10) params.set("limit", String(l));
-      if (s.key !== "name" || s.order !== "asc") {
+      if (s.key !== "id" || s.order !== "asc") {
         params.set("sortBy", s.key);
         params.set("sortOrder", s.order);
       }
 
       Object.entries(f).forEach(([key, value]) => {
-        if (value === "" || value === undefined || value === null) return;
+        if (value === null || value === undefined || value === "") return;
 
-        if (
-          typeof value === "object" &&
-          value !== null &&
-          "from" in value &&
-          "to" in value
-        ) {
-          if (value.from) params.set(`${key}_from`, value.from.toDate().toISOString());
-          if (value.to) params.set(`${key}_to`, value.to.toDate().toISOString());
+        if (typeof value === "object" && "from" in value && "to" in value) {
+          const range = value as DateRange;
+          if (range.from) params.set(`${key}_from`, range.from.toDate().toISOString());
+          if (range.to) params.set(`${key}_to`, range.to.toDate().toISOString());
           return;
         }
 
-        if (Array.isArray(value)) {
-          if (value.length === 0) return;
-          const ids = value.map((v: any) =>
-            typeof v === "object" ? v.id ?? v.value : v
-          );
-          params.set(key, ids.join(","));
-          return;
-        }
-
-        if (typeof value === "object" && value !== null) {
-          params.set(key, String(value.id ?? value.value));
-        } else {
-          params.set(key, String(value));
+        const serialized = serializeFilterValue(value);
+        if (serialized !== null) {
+          params.set(key, serialized);
         }
       });
 
@@ -142,7 +199,7 @@ export default function UsersPage() {
     updateURL(page, limit, sort, filters);
   }, [page, limit, sort, filters, updateURL]);
 
-  const handleFilter = (newFilters: Record<string, any>) => {
+  const handleFilter = (newFilters: Filters) => {
     setFilters(newFilters);
     setPage(1);
   };
@@ -162,66 +219,68 @@ export default function UsersPage() {
     if (!result.isConfirmed) return;
 
     try {
-      const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        queryClient.invalidateQueries({ queryKey: ["users"] });
-        await queryClient.refetchQueries({ queryKey: ["users"] });
-        toast.success("کاربر با موفقیت حذف شد");
-      } else {
-        const err = await res.json();
-        toast.error(err.error || "خطا در حذف کاربر");
-      }
+      await apiClient.delete(`/users/${id}`);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      await queryClient.refetchQueries({ queryKey: ["users"] });
+      toast.success("کاربر با موفقیت حذف شد");
     } catch (error) {
-      toast.error("خطا در ارتباط با سرور");
+      if (error instanceof AxiosError) {
+        const responseData = error.response?.data as { error?: string } | undefined;
+        toast.error(responseData?.error || "خطا در حذف کاربر");
+      } else {
+        toast.error("خطا در ارتباط با سرور");
+      }
     }
   };
 
   const columns = [
     { key: "id", title: "شناسه", sortable: true },
-    { key: "name", title: "نام", sortable: true },
     {
-      key: "mobile",
+      key: "first_name",
+      title: "نام",
+      sortable: true,
+      render: (user: User) => user.first_name || "-",
+    },
+    {
+      key: "last_name",
+      title: "نام خانوادگی",
+      sortable: true,
+      render: (user: User) => user.last_name || "-",
+    },
+    {
+      key: "phone",
       title: "موبایل",
       sortable: true,
-      render: (user: any) => (
-        <span dir="ltr">{toPersianDigits(user.mobile)}</span>
+      render: (user: User) => (
+        <span dir="ltr">{toPersianDigits(user.phone)}</span>
       ),
     },
     {
-      key: "roles",
-      title: "نقش‌ها",
+      key: "email",
+      title: "ایمیل",
       sortable: true,
-      render: (user: any) => (
-        <span>{user.roles?.map((r: any) => r.title).join("، ") || "-"}</span>
-      ),
+      render: (user: User) => user.email || "-",
     },
     {
-      key: "is_active",
+      key: "enabled",
       title: "وضعیت",
       sortable: true,
-      render: (user: any) => (
+      render: (user: User) => (
         <Badge
           className={
-            user.is_active
+            user.enabled
               ? "bg-green-100 text-green-700"
               : "bg-red-100 text-red-700"
           }
         >
-          {user.is_active ? "فعال" : "غیرفعال"}
+          {user.enabled ? "فعال" : "غیرفعال"}
         </Badge>
       ),
     },
   ];
 
-  const renderActions = (user: any) => (
+  const renderActions = (user: User) => (
     <div className="flex justify-center gap-2">
-      <AppButton
-        variant="ghost"
-        size="icon"
-        onClick={() => router.push(`/users/${user.id}`)}
-      >
-        <Eye className="h-4 w-4" />
-      </AppButton>
       <AppButton
         variant="ghost"
         size="icon"
@@ -240,27 +299,26 @@ export default function UsersPage() {
   );
 
   const filterFields: FilterField[] = [
-    { name: "name", label: "نام", type: "text" },
-    { name: "mobile", label: "موبایل", type: "text" },
+    { name: "id", label: "شناسه", type: "text" },
+    { name: "phone", label: "موبایل", type: "text" },
+    { name: "first_name", label: "نام", type: "text" },
+    { name: "last_name", label: "نام خانوادگی", type: "text" },
+    { name: "email", label: "ایمیل", type: "text" },
     {
-      name: "role",
+      name: "role_ids",
       label: "نقش‌ها",
       type: "multi-select",
-      options: [
-        { id: 1, title: "ادمین" },
-        { id: 2, title: "کاربر" },
-        { id: 3, title: "ویرایشگر" },
-      ],
+      options: roleOptions,
       valueKey: "id",
-      labelKey: "title",
+      labelKey: "name",
     },
     {
-      name: "status",
+      name: "enabled",
       label: "وضعیت",
       type: "select",
       options: [
-        { id: "active", title: "فعال" },
-        { id: "inactive", title: "غیرفعال" },
+        { id: "true", title: "فعال" },
+        { id: "false", title: "غیرفعال" },
       ],
       valueKey: "id",
       labelKey: "title",
@@ -275,10 +333,6 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">کاربران</h1>
-      </div>
-
       <FilterBar
         fields={filterFields}
         onFilter={handleFilter}
@@ -307,6 +361,7 @@ export default function UsersPage() {
         toolbarActions={
           <>
             <AppButton
+              variant="blue"
               onClick={() => router.push("/users/create")}
             >
               <Plus className="h-4 w-4" />

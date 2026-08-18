@@ -6,19 +6,21 @@ import Select, { StylesConfig } from "react-select";
 export type Option = {
   value: string;
   label: string;
-  [key: string]: any; // برای ذخیره سایر فیلدها (مثل id، title و ...)
+  [key: string]: unknown;
 };
 
+export type SelectValue = string | string[] | null;
+
 interface SelectInputProps {
-  options: any[]; // داده خام از backend
-  value?: string | string[] | null; // مقدار ساده (نه آبجکت)
-  onChange?: (value: string | string[] | null) => void;
+  options: unknown[]; // داده‌های خام
+  value?: SelectValue;
+  onChange?: (value: SelectValue) => void;
   isMulti?: boolean;
   placeholder?: string;
   className?: string;
   isSearchable?: boolean;
-  valueKey?: string; // پیش‌فرض "value"
-  labelKey?: string; // پیش‌فرض "label"
+  valueKey?: string;
+  labelKey?: string;
 }
 
 export function SelectInput({
@@ -35,16 +37,26 @@ export function SelectInput({
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
-    setMounted(true);
+    const timer = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(timer);
   }, []);
 
-  // نرمال‌سازی Options
+  // نرمال‌سازی گزینه‌ها
   const normalizedOptions: Option[] = React.useMemo(() => {
-    return options.map((opt) => ({
-      value: String(opt[valueKey]),
-      label: String(opt[labelKey]),
-      ...opt,
-    }));
+    return options.map((opt) => {
+      if (typeof opt === "object" && opt !== null) {
+        const record = opt as Record<string, unknown>;
+        return {
+          value: String(record[valueKey]),
+          label: String(record[labelKey]),
+          ...record,
+        };
+      }
+      return {
+        value: String(opt),
+        label: String(opt),
+      };
+    });
   }, [options, valueKey, labelKey]);
 
   // تبدیل value ساده به آبجکت‌های Option برای react-select
@@ -61,12 +73,14 @@ export function SelectInput({
     }
   }, [normalizedOptions, value, isMulti]);
 
-  const handleChange = (newValue: any) => {
+  const handleChange = (newValue: unknown) => {
     if (isMulti) {
       const multiValue = newValue as Option[];
+      // ✅ خروجی: آرایه‌ای از رشته‌های value
       onChange?.(multiValue.length ? multiValue.map((opt) => opt.value) : null);
     } else {
       const singleValue = newValue as Option | null;
+      // ✅ خروجی: رشته value
       onChange?.(singleValue ? singleValue.value : null);
     }
   };
