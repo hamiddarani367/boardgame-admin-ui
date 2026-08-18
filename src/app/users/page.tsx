@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useApiQuery, apiClient } from "@/hooks/useApi";
 import { DataTable } from "@/components/shared/DataTable";
 import { FilterBar, type FilterField } from "@/components/shared/FilterBar";
@@ -16,7 +16,7 @@ import persian_fa from "react-date-object/locales/persian_fa";
 import Swal from "sweetalert2";
 import { toast } from "sonner";
 import { AxiosError } from "axios";
-import { useRoles } from "@/hooks/useRoles";
+import { useRoles, Role } from "@/hooks/useRoles";
 
 // ==================== تایپ‌ها ====================
 interface User {
@@ -47,7 +47,7 @@ interface SortState {
   order: "asc" | "desc";
 }
 
-// ==================== سریالایز فیلترها ====================
+// ==================== سریالایز/دی‌سریالایز فیلترها ====================
 function serializeFilterValue(value: FilterValue): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (Array.isArray(value)) {
@@ -55,7 +55,7 @@ function serializeFilterValue(value: FilterValue): string | null {
     return value.join(",");
   }
   if (typeof value === "object" && "from" in value && "to" in value) {
-    return null; // در updateURL پردازش می‌شود
+    return null; // جداگانه در updateURL پردازش می‌شود
   }
   return String(value);
 }
@@ -66,24 +66,22 @@ function deserializeFilters(searchParams: URLSearchParams): Filters {
   searchParams.forEach((value, key) => {
     if (["page", "limit", "sortBy", "sortOrder"].includes(key)) return;
 
+    // بازه‌ی تاریخ/زمان (ISO string)
     if (key.endsWith("_from") || key.endsWith("_to")) {
       const mainKey = key.replace(/_from$|_to$/, "");
       if (!filters[mainKey]) {
         filters[mainKey] = { from: null, to: null } as DateRange;
       }
       const range = filters[mainKey] as DateRange;
-      if (key.endsWith("_from")) {
-        range.from = new DateObject({
-          date: new Date(value),
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        const dateObj = new DateObject({
+          date,
           calendar: persian,
           locale: persian_fa,
         });
-      } else {
-        range.to = new DateObject({
-          date: new Date(value),
-          calendar: persian,
-          locale: persian_fa,
-        });
+        if (key.endsWith("_from")) range.from = dateObj;
+        else range.to = dateObj;
       }
       return;
     }
@@ -142,7 +140,41 @@ export default function UsersPage() {
   const [limit, setLimit] = useState(initialLimit);
   const [filters, setFilters] = useState<Filters>(initialFilters);
 
-  // دریافت لیست کاربران
+  // دریافت نقش‌ها برای فیلتر
+  const { data: rolesData } = useRoles();
+
+  const roleOptions = (rolesData || []).map((role: Role) => ({
+    value: String(role.id),
+    label: role.name,
+    ...role,
+  }));
+
+  // آماده‌سازی فیلترها برای ارسال به API (تبدیل DateRange به ISO)
+  const apiFilters = useMemo(() => {
+    const { created_at, ...rest } = filters;
+
+    if (
+      created_at &&
+      typeof created_at === "object" &&
+      "from" in created_at &&
+      "to" in created_at
+    ) {
+      const range = created_at as DateRange;
+      const result: Record<string, unknown> = { ...rest };
+
+      if (range.from) {
+        result.created_at_from = range.from.toDate().toISOString();
+      }
+      if (range.to) {
+        result.created_at_to = range.to.toDate().toISOString();
+      }
+
+      return result;
+    }
+
+    return rest;
+  }, [filters]);
+
   const { data, isLoading } = useApiQuery<UsersResponse>(
     "/users",
     ["users"],
@@ -151,18 +183,10 @@ export default function UsersPage() {
       limit,
       sortBy: sort.key,
       sortOrder: sort.order,
-      ...filters,
+      ...apiFilters,
     }
   );
 
-  const { data: rolesData } = useRoles();
-    const roleOptions = (rolesData || []).map((role) => ({
-      value: String(role.id),
-      label: role.name,
-      ...role,
-    }));
-
-  // همگام‌سازی URL
   const updateURL = useCallback(
     (p: number, l: number, s: SortState, f: Filters) => {
       const params = new URLSearchParams();
@@ -284,6 +308,13 @@ export default function UsersPage() {
       <AppButton
         variant="ghost"
         size="icon"
+        onClick={() => router.push(`/users/${user.id}`)}
+      >
+        <Eye className="h-4 w-4" />
+      </AppButton>
+      <AppButton
+        variant="ghost"
+        size="icon"
         onClick={() => router.push(`/users/${user.id}/edit`)}
       >
         <Pencil className="h-4 w-4" />
@@ -333,6 +364,10 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">کاربران</h1>
+      </div>
+
       <FilterBar
         fields={filterFields}
         onFilter={handleFilter}
