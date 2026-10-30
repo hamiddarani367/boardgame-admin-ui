@@ -13,27 +13,50 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  Menu,
-  ChevronLeft,
   LayoutDashboard,
   Package,
   ShoppingBag,
   Tags,
+  Award,
+  Tag,
   SlidersHorizontal,
   ShoppingCart,
-  RotateCcw,
+  Clock,
+  Truck,
   Users,
   MapPin,
   ShieldCheck,
   KeyRound,
   UserCog,
-  CreditCard,
+  Warehouse,
+  Boxes,
+  AlertTriangle,
+  History,
+  PackageCheck,
+  MessageCircle,
   Receipt,
   Percent,
-  Truck,
+  CreditCard,
+  Wallet,
+  RotateCcw,
   BarChart3,
+  TrendingUp,
+  DollarSign,
+  Bell,
+  Send,
   MessageSquare,
+  Images,
+  ScrollText,
   Settings,
+  FileText,
+  Image,
+  UserCheck,
+  LogIn,
+  Headphones,
+  Megaphone,
+  ChevronLeft,
+  FileEdit,
+  FolderTree,
 } from "lucide-react";
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -48,17 +71,24 @@ type MenuItem = {
   path?: string;
   href?: string;
   children?: MenuItem[];
-  permission?: string; // ⬅️ مجوز لازم برای نمایش
+  permission?: string;
 };
 
 // منوی کامل با فیلد permission برای هر آیتم
 const menuItems: MenuItem[] = [
+  // ============================================================
+  // ==================== داشبورد ====================
+  // ============================================================
   {
     label: "داشبورد",
     icon: LayoutDashboard,
     href: "/dashboard",
     permission: "dashboard.view",
   },
+
+  // ============================================================
+  // ==================== محصولات ====================
+  // ============================================================
   {
     label: "محصولات",
     icon: Package,
@@ -78,6 +108,18 @@ const menuItems: MenuItem[] = [
         permission: "categories.view",
       },
       {
+        label: "برندها",
+        icon: Award,
+        href: "/products/brands",
+        permission: "brands.view",
+      },
+      {
+        label: "تگ‌ها",
+        icon: Tag,
+        href: "/products/tags",
+        permission: "tags.view",
+      },
+      {
         label: "ویژگی‌ها",
         icon: SlidersHorizontal,
         href: "/products/attributes",
@@ -85,6 +127,10 @@ const menuItems: MenuItem[] = [
       },
     ],
   },
+
+  // ============================================================
+  // ==================== سفارشات ====================
+  // ============================================================
   {
     label: "سفارشات",
     icon: ShoppingCart,
@@ -92,19 +138,17 @@ const menuItems: MenuItem[] = [
     permission: "orders.view",
     children: [
       {
-        label: "همه سفارشات",
+        label: "سفارشات",
         icon: ShoppingCart,
         href: "/orders",
         permission: "orders.view",
       },
-      {
-        label: "مرجوعی‌ها",
-        icon: RotateCcw,
-        href: "/orders/returns",
-        permission: "returns.view",
-      },
     ],
   },
+
+  // ============================================================
+  // ==================== کاربران ====================
+  // ============================================================
   {
     label: "کاربران",
     icon: Users,
@@ -138,57 +182,198 @@ const menuItems: MenuItem[] = [
           {
             label: "نقش‌ها",
             icon: UserCog,
-            href: "/users/permissions/roles",
+            href: "/users/roles",
             permission: "roles.view",
           },
         ],
       },
     ],
   },
+
+  // ============================================================
+  // ==================== انبار ====================
+  // ============================================================
+  {
+    label: "انبار",
+    icon: Warehouse,
+    path: "/inventory",
+    permission: "inventory.view",
+    children: [
+      {
+        label: "موجودی",
+        icon: Boxes,
+        href: "/inventory/stock",
+        permission: "inventory.view",
+      },
+      {
+        label: "هشدار کمبود",
+        icon: AlertTriangle,
+        href: "/inventory/low-stock",
+        permission: "inventory.view",
+      },
+      {
+        label: "تاریخچه انبار",
+        icon: History,
+        href: "/inventory/history",
+        permission: "inventory.view",
+      },
+    ],
+  },
+
+  // ============================================================
+  // ==================== نظرات ====================
+  // ============================================================
+  {
+    label: "نظرات",
+    icon: MessageCircle,
+    path: "/reviews",
+    permission: "reviews.view",
+    children: [
+      {
+        label: "نظرات",
+        icon: Clock,
+        href: "/reviews/pending",
+        permission: "reviews.moderate",
+      },
+    ],
+  },
+
+  // ============================================================
+  // ==================== مالی ====================
+  // ============================================================
   {
     label: "مالی",
-    icon: CreditCard,
+    icon: Receipt,
     path: "/finance",
     permission: "finance.view",
     children: [
-      {
-        label: "پرداخت‌ها",
-        icon: CreditCard,
-        href: "/finance/payments",
-        permission: "payments.view",
-      },
-      {
-        label: "تراکنش‌ها",
-        icon: Receipt,
-        href: "/finance/transactions",
-        permission: "transactions.view",
-      },
       {
         label: "تخفیف‌ها",
         icon: Percent,
         href: "/finance/discounts",
         permission: "discounts.view",
       },
+      {
+        label: "درگاه‌ها",
+        icon: CreditCard,
+        href: "/finance/gateways",
+        permission: "gateways.view",
+      },
     ],
   },
-  {
-    label: "حمل‌ونقل",
-    icon: Truck,
-    href: "/shipping",
-    permission: "shipping.view",
-  },
+
+  // ============================================================
+  // ==================== گزارش‌ها ====================
+  // ============================================================
   {
     label: "گزارش‌ها",
     icon: BarChart3,
-    href: "/reports",
+    path: "/reports",
     permission: "reports.view",
+    children: [
+      {
+        label: "فروش",
+        icon: TrendingUp,
+        href: "/reports/sales",
+        permission: "reports.view",
+      },
+      {
+        label: "مشتریان",
+        icon: Users,
+        href: "/reports/customers",
+        permission: "reports.view",
+      },
+      {
+        label: "محصولات",
+        icon: Package,
+        href: "/reports/products",
+        permission: "reports.view",
+      },
+      {
+        label: "مالی",
+        icon: Wallet,
+        href: "/reports/finance",
+        permission: "reports.view",
+      },
+      {
+        label: "نرخ دلار",
+        icon: DollarSign,
+        href: "/reports/exchange-rates",
+        permission: "exchange_rates.view",
+      },
+    ],
   },
+
+  // ============================================================
+  // ==================== اطلاع‌رسانی ====================
+  // ============================================================
+  {
+    label: "اطلاع‌رسانی",
+    icon: Bell,
+    path: "/notifications",
+    permission: "notifications.view",
+    children: [
+      {
+        label: "ارسال اعلان",
+        icon: Send,
+        href: "/notifications/send",
+        permission: "notifications.send",
+      },
+      {
+        label: "قالب پیامک",
+        icon: MessageSquare,
+        href: "/notifications/sms-templates",
+        permission: "notifications.view",
+      },
+      {
+        label: "تاریخچه اعلان‌ها",
+        icon: History,
+        href: "/notifications/history",
+        permission: "notifications.view",
+      },
+    ],
+  },
+// ============================================================
+// ==================== محتوا ====================
+// ============================================================
+  {
+    label: "محتوا",
+    icon: FileText,
+    path: "/content",
+    permission: "content.view",
+    children: [
+      {
+        label: "محتواها",
+        icon: FileText,
+        href: "/content",
+        permission: "content.view",
+      },
+      {
+        label: "دسته‌بندی‌ها",
+        icon: FolderTree,
+        href: "/content/categories",
+        permission: "content_categories.view",
+      },
+      {
+        label: "تگ‌ها",
+        icon: Tags,
+        href: "/content/tags",
+        permission: "content_tags.view",
+      },
+    ],
+  },
+  // ============================================================
+  // ==================== پیام‌ها ====================
+  // ============================================================
   {
     label: "پیام‌ها",
     icon: MessageSquare,
     href: "/messages",
     permission: "messages.view",
   },
+  // ============================================================
+  // ==================== تنظیمات ====================
+  // ============================================================
   {
     label: "تنظیمات",
     icon: Settings,
@@ -203,19 +388,16 @@ function filterMenuItems(
   hasPermission: (permission: string) => boolean
 ): MenuItem[] {
   return items.reduce((acc, item) => {
-    // اگر مجوز دارد و کاربر آن را ندارد، کلاً حذف کن
     if (item.permission && !hasPermission(item.permission)) {
       return acc;
     }
 
-    // اگر زیرمنو دارد، آن را فیلتر کن
     if (item.children) {
       const children = filterMenuItems(item.children, hasPermission);
       if (children.length === 0) return acc;
       return [...acc, { ...item, children }];
     }
 
-    // برگ بدون مجوز یا با مجوز تأیید شده
     return [...acc, item];
   }, [] as MenuItem[]);
 }
@@ -241,7 +423,6 @@ function SidebarMenuItem({
     dispatch(setMobileSidebarOpen(false));
   };
 
-  // حالت کوچک (فقط آیکون)
   if (collapsed) {
     if (item.href) {
       return (
@@ -276,7 +457,6 @@ function SidebarMenuItem({
     );
   }
 
-  // حالت کامل
   if (item.children && item.children.length > 0) {
     return (
       <Collapsible open={open} onOpenChange={setOpen} className="w-full">
@@ -308,7 +488,6 @@ function SidebarMenuItem({
     );
   }
 
-  // برگ (لینک)
   return (
     <Link
       href={item.href || "#"}
@@ -331,9 +510,8 @@ export default function Sidebar() {
   const { sidebarCollapsed, mobileSidebarOpen } = useSelector(
     (state: RootState) => state.ui
   );
-  const { hasPermission } = useAuth(); // ✅ دریافت تابع بررسی مجوز
+  const { hasPermission } = useAuth();
 
-  // فیلتر منو بر اساس دسترسی‌های کاربر
   const visibleMenuItems = filterMenuItems(menuItems, hasPermission);
 
   return (

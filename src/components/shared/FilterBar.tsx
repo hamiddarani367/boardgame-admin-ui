@@ -1,3 +1,4 @@
+// src/components/shared/FilterBar.tsx
 "use client";
 
 import { useState } from "react";
@@ -6,41 +7,47 @@ import { SelectInput } from "./SelectInput";
 import { AppButton } from "./AppButton";
 import { PersianDateTimeRangePicker } from "./PersianDateTimeRangePicker";
 import { Search, X } from "lucide-react";
+import { DateObject } from "react-multi-date-picker";
 
 // تعریف نوع فیلد
 export type FilterField = {
   name: string;
   label: string;
   type: "text" | "select" | "multi-select" | "date" | "date-range" | "date-time-range";
-  options?: any[]; // داده‌های خام از backend
+  options?: unknown[];
   placeholder?: string;
-  valueKey?: string;   // کلید مقدار (پیش‌فرض "value")
-  labelKey?: string;   // کلید برچسب (پیش‌فرض "label")
-  colSpan?: 1 | 2;     // عرض دو ستونه برای فیلدهای خاص
+  valueKey?: string;
+  labelKey?: string;
+  colSpan?: 1 | 2;
+  isSearchable?: boolean;
 };
+
+// تایپ‌های مشترک
+export type DateRangeValue = { from: DateObject | null; to: DateObject | null };
+export type FilterValue = string | string[] | DateRangeValue | null;
+export type Filters = Record<string, FilterValue>;
 
 interface FilterBarProps {
   fields: FilterField[];
-  onFilter: (filters: Record<string, any>) => void;
-  initialValues?: Record<string, any>;
+  onFilter: (filters: Filters) => void;
+  initialValues?: Filters;
 }
 
 export function FilterBar({ fields, onFilter, initialValues = {} }: FilterBarProps) {
-  const [filters, setFilters] = useState<Record<string, any>>(initialValues);
+  const [filters, setFilters] = useState<Filters>(initialValues);
 
-  const updateFilter = (name: string, value: any) => {
-    setFilters((prev) => ({ ...prev, [name]: value }));
+  const updateFilter = (name: string, value: unknown) => {
+    setFilters((prev) => ({ ...prev, [name]: value as FilterValue }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // حذف مقادیر خالی
     const activeFilters = Object.fromEntries(
       Object.entries(filters).filter(
         ([, v]) => v !== "" && v !== undefined && v !== null && (!Array.isArray(v) || v.length > 0)
       )
     );
-    onFilter(activeFilters);
+    onFilter(activeFilters as Filters);
   };
 
   const handleReset = () => {
@@ -53,7 +60,6 @@ export function FilterBar({ fields, onFilter, initialValues = {} }: FilterBarPro
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {fields.map((field) => {
           const isMulti = field.type === "multi-select";
-          // مقدار پیش‌فرض: آرایه خالی برای multi، رشته خالی برای single
           const defaultValue = isMulti ? [] : "";
 
           return (
@@ -68,7 +74,7 @@ export function FilterBar({ fields, onFilter, initialValues = {} }: FilterBarPro
               {field.type === "text" && (
                 <AppInput
                   placeholder={field.placeholder || `جستجوی ${field.label}`}
-                  value={filters[field.name] || ""}
+                  value={(filters[field.name] as string) || ""}
                   onChange={(e) => updateFilter(field.name, e.target.value)}
                 />
               )}
@@ -76,27 +82,34 @@ export function FilterBar({ fields, onFilter, initialValues = {} }: FilterBarPro
               {(field.type === "select" || field.type === "multi-select") && (
                 <SelectInput
                   options={field.options || []}
-                  value={filters[field.name] !== undefined ? filters[field.name] : defaultValue}
+                  value={
+                    filters[field.name] !== undefined
+                      ? (filters[field.name] as string | string[])
+                      : defaultValue
+                  }
                   onChange={(val) => updateFilter(field.name, val)}
                   isMulti={isMulti}
                   placeholder={field.placeholder || `انتخاب ${field.label}`}
                   className="w-full"
                   valueKey={field.valueKey || "value"}
                   labelKey={field.labelKey || "label"}
+                  isSearchable={field.isSearchable || false}
                 />
               )}
 
               {field.type === "date" && (
                 <AppInput
                   type="date"
-                  value={filters[field.name] || ""}
+                  value={(filters[field.name] as string) || ""}
                   onChange={(e) => updateFilter(field.name, e.target.value)}
                 />
               )}
 
               {field.type === "date-range" && (
                 <PersianDateTimeRangePicker
-                  value={filters[field.name] || { from: null, to: null }}
+                  value={
+                    (filters[field.name] as DateRangeValue) || { from: null, to: null }
+                  }
                   onChange={(val) => updateFilter(field.name, val)}
                   fromPlaceholder="از تاریخ"
                   toPlaceholder="تا تاریخ"
@@ -105,7 +118,9 @@ export function FilterBar({ fields, onFilter, initialValues = {} }: FilterBarPro
 
               {field.type === "date-time-range" && (
                 <PersianDateTimeRangePicker
-                  value={filters[field.name] || { from: null, to: null }}
+                  value={
+                    (filters[field.name] as DateRangeValue) || { from: null, to: null }
+                  }
                   onChange={(val) => updateFilter(field.name, val)}
                 />
               )}

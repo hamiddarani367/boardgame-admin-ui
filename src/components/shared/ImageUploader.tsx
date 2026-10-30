@@ -13,13 +13,13 @@ interface ImageUploaderProps {
   onUpload?: (file: File, folder: string) => Promise<string>;
   onUploadMultiple?: (files: File[], folder: string) => Promise<string[]>;
   onDelete?: (url: string) => Promise<void>;
-  folder?: string; // پوشه مقصد در MinIO (products, users, ...)
-  objectKeyExtractor?: (url: string) => string; // استخراج object_key از URL
+  folder?: string;
+  objectKeyExtractor?: (url: string) => string;
   className?: string;
   accept?: string;
 }
 
-// توابع استخراج پاسخ
+// استخراج url از پاسخ تک‌آپلود
 function extractUrl(response: unknown): string {
   if (typeof response === "object" && response !== null) {
     const obj = response as Record<string, unknown>;
@@ -32,27 +32,62 @@ function extractUrl(response: unknown): string {
   throw new Error("ساختار پاسخ آپلود نامعتبر است");
 }
 
+// استخراج urlها از پاسخ چندآپلود (پشتیبانی از آرایه مستقیم)
 function extractUrls(response: unknown): string[] {
+  // اگر response مستقیماً آرایه‌ای از آبجکت‌ها باشد
+  if (Array.isArray(response)) {
+    return response
+      .map((item) => {
+        if (typeof item === "object" && item !== null) {
+          const obj = item as Record<string, unknown>;
+          return typeof obj.url === "string" ? obj.url : "";
+        }
+        return "";
+      })
+      .filter(Boolean);
+  }
+
+  // اگر response آبجکتی با خاصیت urls باشد
   if (typeof response === "object" && response !== null) {
     const obj = response as Record<string, unknown>;
-    if (Array.isArray(obj.urls)) return obj.urls as string[];
+
+    // حالت urls مستقیم
+    if (Array.isArray(obj.urls)) {
+      return obj.urls as string[];
+    }
+
+    // حالت data که خود آرایه‌ای از آبجکت‌هاست
+    if (Array.isArray(obj.data)) {
+      return obj.data
+        .map((item) => {
+          if (typeof item === "object" && item !== null) {
+            const dataItem = item as Record<string, unknown>;
+            return typeof dataItem.url === "string" ? dataItem.url : "";
+          }
+          return "";
+        })
+        .filter(Boolean);
+    }
+
+    // حالت data که آبجکتی با خاصیت urls است
     if (typeof obj.data === "object" && obj.data !== null) {
       const data = obj.data as Record<string, unknown>;
-      if (Array.isArray(data.urls)) return data.urls as string[];
+      if (Array.isArray(data.urls)) {
+        return data.urls as string[];
+      }
     }
   }
+
   throw new Error("ساختار پاسخ آپلود چندگانه نامعتبر است");
 }
 
-// استخراج پیش‌فرض object_key از URL (حذف دامنه و bucket)
+// استخراج object_key از URL برای حذف
 function defaultObjectKeyExtractor(url: string): string {
   try {
     const urlObj = new URL(url);
     const path = urlObj.pathname; // /bucket/folder/file.jpg
     const segments = path.split("/").filter(Boolean);
-    // فرض می‌کنیم ساختار: bucket/objectKey
     if (segments.length >= 2) {
-      // حذف bucket (اولین بخش)
       return segments.slice(1).join("/");
     }
     return segments[0] || "";
@@ -82,7 +117,7 @@ export function ImageUploader({
       const formData = new FormData();
       formData.append("file", file);
       formData.append("folder", folder);
-      const response = await apiClient.post("/upload", formData, {
+      const response = await apiClient.post("/admin/uploads", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       return extractUrl(response.data);
@@ -97,7 +132,7 @@ export function ImageUploader({
         formData.append("files", file);
       });
       formData.append("folder", folder);
-      const response = await apiClient.post("/upload/multiple", formData, {
+      const response = await apiClient.post("/admin/uploads/multiple", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       return extractUrls(response.data);
@@ -108,7 +143,7 @@ export function ImageUploader({
   const defaultDelete = useCallback(
     async (url: string): Promise<void> => {
       const objectKey = objectKeyExtractor(url);
-      await apiClient.delete("/upload", {
+      await apiClient.delete("/admin/uploads", {
         data: { object_key: objectKey },
       });
     },

@@ -6,24 +6,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useRouter } from "next/navigation";
 import { AppInput } from "@/components/shared/AppInput";
-import { SelectInput, Option } from "@/components/shared/SelectInput";
+import { SelectInput } from "@/components/shared/SelectInput";
+import { BooleanSelect } from "@/components/shared/BooleanSelect";
 import { AppButton } from "@/components/shared/AppButton";
 import { ImageUploader } from "@/components/shared/ImageUploader";
-import { useRoles, Role } from "@/hooks/useRoles";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useApiQuery } from "@/hooks/useApi";
 
-// تعریف schema
-const userFormSchema = z.object({
-  first_name: z.string().min(2, "نام حداقل ۲ حرف باید داشته باشد"),
-  last_name: z.string().min(2, "نام خانوادگی حداقل ۲ حرف باید داشته باشد"),
-  phone: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸)"),
-  email: z.string().email("ایمیل معتبر نیست").or(z.literal("")),
-  role_ids: z.array(z.number()),
-  enabled: z.string().min(1, "وضعیت را انتخاب کنید"),
-  image: z.string(),
-});
-
-type UserFormValues = z.infer<typeof userFormSchema>;
+// ==================== تایپها ====================
+interface Role {
+  id: number;
+  name: string;
+}
 
 interface UserFormProps {
   initialData?: {
@@ -48,14 +42,27 @@ interface UserFormProps {
   }) => Promise<void> | void;
 }
 
-const statusOptions: Option[] = [
-  { value: "true", label: "فعال" },
-  { value: "false", label: "غیرفعال" },
-];
+// ==================== schema ====================
+const userFormSchema = z.object({
+  first_name: z.string().min(2, "نام حداقل ۲ حرف باید داشته باشد"),
+  last_name: z.string().min(2, "نام خانوادگی حداقل ۲ حرف باید داشته باشد"),
+  phone: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸)"),
+  email: z.string().email("ایمیل معتبر نیست").or(z.literal("")),
+  role_ids: z.array(z.number()),
+  enabled: z.boolean(),
+  image: z.string(),
+});
+
+type UserFormValues = z.infer<typeof userFormSchema>;
 
 export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProps) {
   const router = useRouter();
-  const { data: roles, isLoading: rolesLoading } = useRoles();
+
+  // دریافت نقشها با استفاده مستقیم از useApiQuery
+  const { data: roles, isLoading: rolesLoading } = useApiQuery<Role[]>(
+    "/admin/roles/all",
+    ["roles-list"]
+  );
 
   const {
     control,
@@ -70,12 +77,12 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
       phone: "",
       email: "",
       role_ids: [],
-      enabled: "true",
+      enabled: false,
       image: "",
     },
   });
 
-  // به‌روزرسانی فرم با داده‌های اولیه
+  // بهروزرسانی فرم با دادههای اولیه
   useEffect(() => {
     if (initialData) {
       reset({
@@ -84,7 +91,7 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
         phone: initialData.phone || "",
         email: initialData.email || "",
         role_ids: initialData.role_ids || [],
-        enabled: initialData.enabled ? "true" : "false",
+        enabled: initialData.enabled,
         image: initialData.image || "",
       });
     }
@@ -97,7 +104,7 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
       phone: data.phone,
       email: data.email || null,
       role_ids: data.role_ids,
-      enabled: data.enabled === "true",
+      enabled: data.enabled,
       image: data.image || null,
     };
     await onSubmit(payload);
@@ -173,9 +180,9 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
               {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
             </div>
 
-            {/* نقش‌ها (چندانتخابی) */}
+            {/* نقشها (چندانتخابی) */}
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">نقش‌ها *</label>
+              <label className="text-sm font-medium">نقشها *</label>
               <Controller
                 name="role_ids"
                 control={control}
@@ -188,7 +195,7 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
                       field.onChange(selected.map(Number));
                     }}
                     isMulti
-                    placeholder="انتخاب نقش‌ها"
+                    placeholder="انتخاب نقشها"
                     className="w-full"
                     valueKey="id"
                     labelKey="name"
@@ -196,7 +203,7 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
                 )}
               />
               {rolesLoading && (
-                <p className="text-xs text-muted-foreground">در حال بارگذاری نقش‌ها...</p>
+                <p className="text-xs text-muted-foreground">در حال بارگذاری نقشها...</p>
               )}
               {errors.role_ids && <p className="text-xs text-red-500">{errors.role_ids.message}</p>}
             </div>
@@ -208,16 +215,11 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
                 name="enabled"
                 control={control}
                 render={({ field }) => (
-                  <SelectInput
-                    options={[
-                      { value: "true", label: "فعال" },
-                      { value: "false", label: "غیرفعال" },
-                    ]}
+                  <BooleanSelect
                     value={field.value}
-                    onChange={(val) => {
-                      const selected = val as string;
-                      field.onChange(selected || "true");
-                    }}
+                    onChange={field.onChange}
+                    trueLabel="فعال"
+                    falseLabel="غیرفعال"
                     placeholder="انتخاب وضعیت"
                     className="w-full"
                   />
@@ -238,7 +240,7 @@ export function UserForm({ initialData, isEdit = false, onSubmit }: UserFormProp
                     maxFiles={1}
                     value={field.value ? [field.value] : []}
                     onChange={(urls) => field.onChange(urls[0] || "")}
-                    folder="users" 
+                    folder="users"
                   />
                 )}
               />

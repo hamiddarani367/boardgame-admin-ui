@@ -62,9 +62,6 @@ export function RoleForm({ initialData, isEdit = false, onSubmit }: RoleFormProp
 
   return (
     <Card className="rounded-none shadow-sm">
-      <CardHeader>
-        <CardTitle>{isEdit ? "ویرایش نقش" : "ایجاد نقش"}</CardTitle>
-      </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-6">
           <div className="flex flex-col gap-2 ">

@@ -1,37 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { AddressForm } from "@/components/forms/AddressForm";
-import { useApiQuery, useApiMutation } from "@/hooks/useApi";
+import { useParams } from "next/navigation";
+import { AddressForm, type AddressInitialData } from "@/components/forms/AddressForm";
+import { useApiQuery } from "@/hooks/useApi";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 
 export default function EditAddressPage() {
   const params = useParams();
-  const router = useRouter();
   const addressId = params.id as string;
 
-  const { data: addressData, isLoading, error } = useApiQuery<any>(
-    `/addresses/${addressId}`,
+  const { data: addressData, isLoading, error } = useApiQuery<AddressInitialData>(
+    `/admin/addresses/${addressId}`,
     ["address", addressId]
   );
-
-  const updateAddress = useApiMutation(
-    `/addresses/${addressId}`,
-    "PUT",
-    ["addresses"]
-  );
-
-  const handleUpdate = async (data: any) => {
-    try {
-      await updateAddress.mutateAsync(data);
-      toast.success("آدرس با موفقیت ویرایش شد");
-      router.push("/users/addresses");
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || "خطا در ویرایش آدرس");
-    }
-  };
 
   if (isLoading) {
     return (
@@ -41,18 +22,13 @@ export default function EditAddressPage() {
     );
   }
 
-  if (error) {
+  if (error || !addressData) {
     return <div className="text-red-500">خطا در دریافت اطلاعات</div>;
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">ویرایش آدرس</h1>
-      <AddressForm
-        initialData={addressData?.address}
-        isEdit
-        onSubmit={handleUpdate}
-      />
+      <AddressForm initialData={addressData} isEdit />
     </div>
   );
 }

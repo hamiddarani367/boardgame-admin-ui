@@ -20,7 +20,7 @@ export default function CreateUserPage() {
       enabled: boolean;
       image: string | null;
     }
-  >("/users", "POST", ["users"]);
+  >("/admin/users", "POST", ["users"]);
 
   const handleCreate = async (data: {
     first_name: string;

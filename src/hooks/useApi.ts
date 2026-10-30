@@ -34,6 +34,12 @@ function clearTokens() {
   document.cookie = "auth_token=; path=/; max-age=0";
 }
 
+function redirectToLogin() {
+  if (typeof window !== "undefined") {
+    window.location.replace("/login");
+  }
+}
+
 // ==================== axios instance ====================
 export const apiClient = axios.create({
   baseURL: "http://localhost:8080/api/v1",
@@ -73,8 +79,10 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // اگر خطا 401 باشد و این درخواست، درخواستِ refresh نباشد
+    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes("/auth/refresh")) {
       if (isRefreshing) {
+        // منتظر refresh فعلی بمان
         return new Promise((resolve, reject) => {
           failedQueue.push({
             resolve: (token: unknown) => {
@@ -92,22 +100,33 @@ apiClient.interceptors.response.use(
       const tokens = getTokens();
       if (!tokens?.refresh_token) {
         clearTokens();
-        if (typeof window !== "undefined") window.location.href = "/login";
+        processQueue(error, null);
+        redirectToLogin();
         return Promise.reject(error);
       }
 
       try {
-        const { data } = await apiClient.post<Tokens>("/auth/refresh", {
-          refresh_token: tokens.refresh_token,
-        });
+        // درخواست refresh جداگانه
+        const { data } = await axios.post<Tokens>(
+          `${apiClient.defaults.baseURL}/auth/refresh`,
+          { refresh_token: tokens.refresh_token }
+        );
+
         setTokens(data);
         processQueue(null, data.access_token);
+
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
+        // خطا در refresh (مانند 401) => خروج از سیستم و ریدایرکت
         clearTokens();
         processQueue(refreshError as AxiosError, null);
-        if (typeof window !== "undefined") window.location.href = "/login";
+
+        // تضمین ریدایرکت بعد از پردازش صف
+        setTimeout(() => {
+          redirectToLogin();
+        }, 0);
+
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
@@ -148,19 +167,9 @@ function buildQueryString(params?: Record<string, unknown>): string {
   if (!params) return "";
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value === null || value === undefined || value === "") return;
-    if (Array.isArray(value)) {
-      const items = value.map((item) =>
-        typeof item === "object" && item !== null
-          ? String((item as Record<string, unknown>).value ?? (item as Record<string, unknown>).id ?? "")
-          : String(item)
-      );
-      searchParams.set(key, items.join(","));
-    } else if (typeof value === "object") {
-      const item = value as Record<string, unknown>;
-      searchParams.set(key, String(item.value ?? item.id ?? ""));
-    } else {
-      searchParams.set(key, String(value));
+    const str = toStringValue(value);
+    if (str !== null) {
+      searchParams.set(key, str);
     }
   });
   const qs = searchParams.toString();

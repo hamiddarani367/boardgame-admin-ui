@@ -1,13 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useApiQuery, apiClient } from "@/hooks/useApi";
 import { DataTable } from "@/components/shared/DataTable";
-import { FilterBar, type FilterField } from "@/components/shared/FilterBar";
+import {
+  FilterBar,
+  type FilterField,
+  type Filters,
+  type FilterValue,
+} from "@/components/shared/FilterBar";
 import { AppButton } from "@/components/shared/AppButton";
 import { Badge } from "@/components/ui/badge";
 import { Eye, Pencil, Trash2, Plus, Download } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toPersianDigits } from "@/lib/format";
 import { DateObject } from "react-multi-date-picker";
@@ -16,7 +21,6 @@ import persian_fa from "react-date-object/locales/persian_fa";
 import Swal from "sweetalert2";
 import { toast } from "sonner";
 import { AxiosError } from "axios";
-import { useRoles, Role } from "@/hooks/useRoles";
 
 // ==================== تایپ‌ها ====================
 interface User {
@@ -34,20 +38,22 @@ interface UsersResponse {
   total: number;
 }
 
+interface Role {
+  id: number;
+  name: string;
+}
+
 interface DateRange {
   from: DateObject | null;
   to: DateObject | null;
 }
-
-type FilterValue = string | string[] | DateRange | null;
-type Filters = Record<string, FilterValue>;
 
 interface SortState {
   key: string;
   order: "asc" | "desc";
 }
 
-// ==================== سریالایز/دی‌سریالایز فیلترها ====================
+// ==================== توابع کمکی فیلتر ====================
 function serializeFilterValue(value: FilterValue): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (Array.isArray(value)) {
@@ -55,7 +61,7 @@ function serializeFilterValue(value: FilterValue): string | null {
     return value.join(",");
   }
   if (typeof value === "object" && "from" in value && "to" in value) {
-    return null; // جداگانه در updateURL پردازش می‌شود
+    return null; // جداگانه پردازش می‌شود
   }
   return String(value);
 }
@@ -66,7 +72,7 @@ function deserializeFilters(searchParams: URLSearchParams): Filters {
   searchParams.forEach((value, key) => {
     if (["page", "limit", "sortBy", "sortOrder"].includes(key)) return;
 
-    // بازه‌ی تاریخ/زمان (ISO string)
+    // بازه‌ی تاریخ
     if (key.endsWith("_from") || key.endsWith("_to")) {
       const mainKey = key.replace(/_from$|_to$/, "");
       if (!filters[mainKey]) {
@@ -140,16 +146,10 @@ export default function UsersPage() {
   const [limit, setLimit] = useState(initialLimit);
   const [filters, setFilters] = useState<Filters>(initialFilters);
 
-  // دریافت نقش‌ها برای فیلتر
-  const { data: rolesData } = useRoles();
+  // دریافت نقش‌ها با useApiQuery مستقیم
+  const { data: rolesData } = useApiQuery<Role[]>("/admin/roles/all", ["roles-list"]);
 
-  const roleOptions = (rolesData || []).map((role: Role) => ({
-    value: String(role.id),
-    label: role.name,
-    ...role,
-  }));
-
-  // آماده‌سازی فیلترها برای ارسال به API (تبدیل DateRange به ISO)
+  // آماده‌سازی فیلترها برای API (تبدیل DateRange به ISO)
   const apiFilters = useMemo(() => {
     const { created_at, ...rest } = filters;
 
@@ -176,7 +176,7 @@ export default function UsersPage() {
   }, [filters]);
 
   const { data, isLoading } = useApiQuery<UsersResponse>(
-    "/users",
+    "/admin/users",
     ["users"],
     {
       page,
@@ -243,7 +243,7 @@ export default function UsersPage() {
     if (!result.isConfirmed) return;
 
     try {
-      await apiClient.delete(`/users/${id}`);
+      await apiClient.delete(`/admin/users/${id}`);
       queryClient.invalidateQueries({ queryKey: ["users"] });
       await queryClient.refetchQueries({ queryKey: ["users"] });
       toast.success("کاربر با موفقیت حذف شد");
@@ -308,13 +308,6 @@ export default function UsersPage() {
       <AppButton
         variant="ghost"
         size="icon"
-        onClick={() => router.push(`/users/${user.id}`)}
-      >
-        <Eye className="h-4 w-4" />
-      </AppButton>
-      <AppButton
-        variant="ghost"
-        size="icon"
         onClick={() => router.push(`/users/${user.id}/edit`)}
       >
         <Pencil className="h-4 w-4" />
@@ -339,7 +332,7 @@ export default function UsersPage() {
       name: "role_ids",
       label: "نقش‌ها",
       type: "multi-select",
-      options: roleOptions,
+      options: rolesData || [], // داده خام
       valueKey: "id",
       labelKey: "name",
     },
@@ -348,11 +341,11 @@ export default function UsersPage() {
       label: "وضعیت",
       type: "select",
       options: [
-        { id: "true", title: "فعال" },
-        { id: "false", title: "غیرفعال" },
+        { value: "true", label: "فعال" },
+        { value: "false", label: "غیرفعال" },
       ],
-      valueKey: "id",
-      labelKey: "title",
+      valueKey: "value",
+      labelKey: "label",
     },
     {
       name: "created_at",
@@ -364,10 +357,6 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">کاربران</h1>
-      </div>
-
       <FilterBar
         fields={filterFields}
         onFilter={handleFilter}

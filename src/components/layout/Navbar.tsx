@@ -1,4 +1,3 @@
-// src/components/layout/Navbar.tsx
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,23 +7,34 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, Menu } from "lucide-react";
-import { useDispatch, useSelector } from "react-redux";
-import { RootState } from "@/store";
+import { Bell, Menu, LogOut } from "lucide-react";
+import { useDispatch } from "react-redux";
 import { toggleSidebarCollapsed, toggleMobileSidebar } from "@/store/slices/uiSlice";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { apiClient } from "@/hooks/useApi";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 export default function Navbar() {
   const dispatch = useDispatch();
   const [isMobile, setIsMobile] = useState(false);
+  const { logout, refreshToken } = useAuth();
+  const router = useRouter();
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1023px)");
-    setIsMobile(mediaQuery.matches);
+
+    // ✅ جلوگیری از setState همزمان: مقدار اولیه را با setTimeout تنظیم می‌کنیم
+    const timer = setTimeout(() => setIsMobile(mediaQuery.matches), 0);
 
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mediaQuery.addEventListener("change", handler);
-    return () => mediaQuery.removeEventListener("change", handler);
+
+    return () => {
+      clearTimeout(timer);
+      mediaQuery.removeEventListener("change", handler);
+    };
   }, []);
 
   const handleHamburgerClick = () => {
@@ -32,6 +42,20 @@ export default function Navbar() {
       dispatch(toggleMobileSidebar());
     } else {
       dispatch(toggleSidebarCollapsed());
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      if (refreshToken) {
+        await apiClient.post("/auth/logout", { refresh_token: refreshToken });
+      }
+    } catch (error) {
+      console.error("Logout request failed:", error);
+    } finally {
+      logout();
+      router.replace("/login");
+      toast.success("با موفقیت خارج شدید");
     }
   };
 
@@ -63,7 +87,10 @@ export default function Navbar() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuItem>پروفایل</DropdownMenuItem>
               <DropdownMenuItem>تنظیمات</DropdownMenuItem>
-              <DropdownMenuItem>خروج</DropdownMenuItem>
+              <DropdownMenuItem onClick={handleLogout} className="text-red-600 cursor-pointer">
+                <LogOut className="ml-2 h-4 w-4" />
+                خروج
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

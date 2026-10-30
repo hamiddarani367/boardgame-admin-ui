@@ -1,34 +1,59 @@
-// src/app/attributes/[id]/edit/page.tsx
 "use client";
 
-import { useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AttributeForm } from "@/components/forms/AttributeForm";
-import { useApiMutation, useApiQuery } from "@/hooks/useApi";
+import { useApiQuery, useApiMutation } from "@/hooks/useApi";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { AxiosError } from "axios";
+
+interface Attribute {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string;
+  icon?: string;
+  enabled: boolean;
+}
 
 export default function EditAttributePage() {
   const params = useParams();
   const router = useRouter();
   const attributeId = params.id as string;
 
-  const { data: attributeData, isLoading, error } = useApiQuery<any>(
-    `/attributes/${attributeId}`,
-    ["attribute", attributeId]
-  );
+  const {
+    data: attributeData,
+    isLoading,
+    error,
+  } = useApiQuery<Attribute>(`/admin/attributes/${attributeId}`, ["attribute", attributeId]);
 
-  const updateAttribute = useApiMutation<any, any>(
-    `/attributes/${attributeId}`,
-    "PUT",
-    ["attributes"]
-  );
+  const updateAttribute = useApiMutation<
+    unknown,
+    {
+      name?: string;
+      description?: string | null;
+      icon?: string | null;
+      enabled?: boolean;
+    }
+  >(`/admin/attributes/${attributeId}`, "PUT", ["attributes"]);
 
-  const handleUpdate = async (data: any) => {
+  const handleUpdate = async (data: {
+    name: string;
+    description: string | null;
+    icon: string | null;
+    enabled: boolean;
+  }) => {
     try {
       await updateAttribute.mutateAsync(data);
-      router.push("/attributes");
-    } catch (error: any) {
-      alert(error.message || "خطا در ویرایش ویژگی");
+      toast.success("ویژگی با موفقیت ویرایش شد");
+      router.push("/products/attributes");
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const responseData = error.response?.data as { error?: string } | undefined;
+        toast.error(responseData?.error || "خطا در ویرایش ویژگی");
+      } else {
+        toast.error("خطا در ویرایش ویژگی");
+      }
     }
   };
 
@@ -40,13 +65,17 @@ export default function EditAttributePage() {
     );
   }
 
-  if (error) {
+  if (error || !attributeData) {
     return <div className="text-red-500">خطا در دریافت اطلاعات</div>;
   }
 
   return (
     <div className="space-y-6">
-      <AttributeForm initialData={attributeData?.attribute} isEdit onSubmit={handleUpdate} />
+      <AttributeForm
+        initialData={attributeData}
+        isEdit
+        onSubmit={handleUpdate}
+      />
     </div>
   );
 }

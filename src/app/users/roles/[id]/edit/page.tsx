@@ -24,14 +24,14 @@ export default function EditRolePage() {
 
   // ✅ پاسخ مستقیم RoleData است (بدون { role: ... })
   const { data: role, isLoading, error } = useApiQuery<RoleData>(
-    `/roles/${roleId}`,
+    `/admin/roles/${roleId}`,
     ["role", roleId],
     undefined,
     { refetchOnMount: true }
   );
 
   const updateRole = useApiMutation<unknown, { name: string; permission_ids: number[] }>(
-    `/roles/${roleId}`,
+    `/admin/roles/${roleId}`,
     "PUT",
     ["roles"]
   );

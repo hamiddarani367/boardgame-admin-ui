@@ -9,18 +9,20 @@ export type Option = {
   [key: string]: unknown;
 };
 
+// تایپ‌های خروجی ساده‌تر
 export type SelectValue = string | string[] | null;
 
 interface SelectInputProps {
   options: unknown[]; // داده‌های خام
-  value?: SelectValue;
-  onChange?: (value: SelectValue) => void;
+  value?: SelectValue; // مقدار انتخابی (رشته یا آرایه رشته)
+  onChange?: (value: SelectValue) => void; // ✅ فقط string|string[]|null
   isMulti?: boolean;
   placeholder?: string;
   className?: string;
   isSearchable?: boolean;
   valueKey?: string;
   labelKey?: string;
+  disabled?: boolean;
 }
 
 export function SelectInput({
@@ -33,6 +35,7 @@ export function SelectInput({
   isSearchable = false,
   valueKey = "value",
   labelKey = "label",
+  disabled = false,
 }: SelectInputProps) {
   const [mounted, setMounted] = React.useState(false);
 
@@ -52,10 +55,7 @@ export function SelectInput({
           ...record,
         };
       }
-      return {
-        value: String(opt),
-        label: String(opt),
-      };
+      return { value: String(opt), label: String(opt) };
     });
   }, [options, valueKey, labelKey]);
 
@@ -66,7 +66,7 @@ export function SelectInput({
       const arr = Array.isArray(value) ? value : [value];
       return arr
         .map((v) => normalizedOptions.find((o) => o.value === v))
-        .filter(Boolean);
+        .filter(Boolean) as Option[];
     } else {
       if (!value || Array.isArray(value)) return null;
       return normalizedOptions.find((o) => o.value === value) || null;
@@ -76,11 +76,11 @@ export function SelectInput({
   const handleChange = (newValue: unknown) => {
     if (isMulti) {
       const multiValue = newValue as Option[];
-      // ✅ خروجی: آرایه‌ای از رشته‌های value
+      // ✅ ارسال آرایه‌ای از value ها
       onChange?.(multiValue.length ? multiValue.map((opt) => opt.value) : null);
     } else {
       const singleValue = newValue as Option | null;
-      // ✅ خروجی: رشته value
+      // ✅ ارسال فقط value رشته‌ای
       onChange?.(singleValue ? singleValue.value : null);
     }
   };
@@ -98,6 +98,7 @@ export function SelectInput({
       placeholder={placeholder}
       isClearable={false}
       isSearchable={isSearchable}
+      isDisabled={disabled}
       className={className}
       classNamePrefix="react-select"
       menuPortalTarget={document.body}

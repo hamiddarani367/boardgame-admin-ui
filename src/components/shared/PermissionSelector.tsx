@@ -26,7 +26,7 @@ function groupPermissions(permissions: Permission[]): Record<string, Permission[
 }
 
 export function PermissionSelector({ value, onChange }: PermissionSelectorProps) {
-  const { data, isLoading } = useApiQuery<Permission[]>("/permissions/all", ["permissions-list"]);
+  const { data, isLoading } = useApiQuery<Permission[]>("/admin/permissions/all", ["permissions-list"]);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const permissions = data ?? [];

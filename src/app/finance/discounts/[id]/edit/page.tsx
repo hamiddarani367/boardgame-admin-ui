@@ -1,35 +1,41 @@
 "use client";
 
-import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { DiscountForm } from "@/components/forms/DiscountForm";
+import { DiscountForm, type DiscountPayload } from "@/components/forms/DiscountForm";
 import { useApiQuery, useApiMutation } from "@/hooks/useApi";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { AxiosError } from "axios";
 
 export default function EditDiscountPage() {
   const params = useParams();
   const router = useRouter();
   const discountId = params.id as string;
 
-  const { data: discountData, isLoading, error } = useApiQuery<any>(
-    `/finance/discounts/${discountId}`,
-    ["discount", discountId]
-  );
+  const {
+    data: discountData,
+    isLoading,
+    error,
+  } = useApiQuery<DiscountPayload>(`/admin/discounts/${discountId}`, ["discount", discountId]);
 
-  const updateDiscount = useApiMutation(
-    `/finance/discounts/${discountId}`,
+  const updateDiscount = useApiMutation<unknown, DiscountPayload>(
+    `/admin/discounts/${discountId}`,
     "PUT",
     ["discounts"]
   );
 
-  const handleUpdate = async (data: any) => {
+  const handleUpdate = async (data: DiscountPayload) => {
     try {
       await updateDiscount.mutateAsync(data);
       toast.success("تخفیف با موفقیت ویرایش شد");
       router.push("/finance/discounts");
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || "خطا در ویرایش تخفیف");
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const responseData = error.response?.data as { error?: string } | undefined;
+        toast.error(responseData?.error || "خطا در ویرایش تخفیف");
+      } else {
+        toast.error("خطا در ویرایش تخفیف");
+      }
     }
   };
 
@@ -41,15 +47,14 @@ export default function EditDiscountPage() {
     );
   }
 
-  if (error) {
+  if (error || !discountData) {
     return <div className="text-red-500">خطا در دریافت اطلاعات</div>;
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">ویرایش تخفیف</h1>
       <DiscountForm
-        initialData={discountData?.discount}
+        initialData={discountData}
         isEdit
         onSubmit={handleUpdate}
       />

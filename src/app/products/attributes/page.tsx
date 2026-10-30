@@ -1,14 +1,54 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAttributes } from "@/hooks/useAttributes";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useApiQuery, apiClient } from "@/hooks/useApi";
 import { DataTable } from "@/components/shared/DataTable";
-import { FilterBar, type FilterField } from "@/components/shared/FilterBar";
 import { AppButton } from "@/components/shared/AppButton";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Pencil, Trash2, Plus } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, Pencil, Trash2, Plus, Download } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import Swal from "sweetalert2";
+import { toast } from "sonner";
+import { AxiosError } from "axios";
+
+// ==================== تایپ‌ها ====================
+interface Attribute {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string;
+  icon?: string;
+  enabled: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface AttributesResponse {
+  attributes: Attribute[];
+  total: number;
+}
+
+interface SortState {
+  key: string;
+  order: "asc" | "desc";
+}
+
+// ==================== خروجی CSV ====================
+const exportToCSV = (attributes: Attribute[]) => {
+  if (!attributes.length) return;
+  const headers = ["شناسه", "نام", "اسلاگ", "وضعیت"];
+  const rows = attributes.map((a) => [a.id, a.name, a.slug, a.enabled ? "فعال" : "غیرفعال"]);
+  const csv =
+    "data:text/csv;charset=utf-8," +
+    [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  const link = document.createElement("a");
+  link.setAttribute("href", encodeURI(csv));
+  link.setAttribute("download", "attributes.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
 
 export default function AttributesPage() {
   const router = useRouter();
@@ -17,130 +57,121 @@ export default function AttributesPage() {
 
   const initialPage = Number(searchParams.get("page")) || 1;
   const initialLimit = Number(searchParams.get("limit")) || 10;
-  const initialSortBy = searchParams.get("sortBy") || "title";
-  const initialSortOrder = (searchParams.get("sortOrder") as "asc" | "desc") || "asc";
+  const initialSortBy = searchParams.get("sortBy") || "id";
+  const initialSortOrder =
+    (searchParams.get("sortOrder") as "asc" | "desc") || "asc";
 
-  const initialFilters: Record<string, any> = {};
-  searchParams.forEach((value, key) => {
-    if (["page", "limit", "sortBy", "sortOrder"].includes(key)) return;
-    initialFilters[key] = value;
+  const [sort, setSort] = useState<SortState>({
+    key: initialSortBy,
+    order: initialSortOrder,
   });
-
-  const [sort, setSort] = useState({ key: initialSortBy, order: initialSortOrder });
   const [page, setPage] = useState(initialPage);
   const [limit, setLimit] = useState(initialLimit);
-  const [filters, setFilters] = useState(initialFilters);
 
-  const { data, isLoading } = useAttributes({ page, limit, sort, filters });
+  const { data, isLoading } = useApiQuery<AttributesResponse>(
+    "/admin/attributes",
+    ["attributes"],
+    {
+      page,
+      limit,
+      sortBy: sort.key,
+      sortOrder: sort.order,
+    }
+  );
 
   const updateURL = useCallback(
-    (p: number, l: number, s: { key: string; order: "asc" | "desc" }, f: Record<string, any>) => {
+    (p: number, l: number, s: SortState) => {
       const params = new URLSearchParams();
       if (p > 1) params.set("page", String(p));
       if (l !== 10) params.set("limit", String(l));
-      if (s.key !== "title" || s.order !== "asc") {
+      if (s.key !== "id" || s.order !== "asc") {
         params.set("sortBy", s.key);
         params.set("sortOrder", s.order);
       }
-      Object.entries(f).forEach(([key, value]) => {
-        if (value !== "" && value !== undefined && value !== null) params.set(key, String(value));
+      const qs = params.toString();
+      router.replace(`/products/attributes${qs ? `?${qs}` : ""}`, {
+        scroll: false,
       });
-      router.replace(`/products/attributes${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
     },
     [router]
   );
 
   useEffect(() => {
-    updateURL(page, limit, sort, filters);
-  }, [page, limit, sort, filters, updateURL]);
-
-  const handleFilter = (newFilters: Record<string, any>) => {
-    setFilters(newFilters);
-    setPage(1);
-  };
+    updateURL(page, limit, sort);
+  }, [page, limit, sort, updateURL]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("آیا مطمئن هستید؟")) return;
-    const res = await fetch(`/api/attributes/${id}`, { method: "DELETE" });
-    if (res.ok) {
+    const result = await Swal.fire({
+      title: "آیا مطمئن هستید؟",
+      text: "این ویژگی حذف خواهد شد!",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "بله، حذف کن",
+      cancelButtonText: "انصراف",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      await apiClient.delete(`/admin/attributes/${id}`);
       queryClient.invalidateQueries({ queryKey: ["attributes"] });
       await queryClient.refetchQueries({ queryKey: ["attributes"] });
+      toast.success("ویژگی با موفقیت حذف شد");
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const data = error.response?.data as { error?: string } | undefined;
+        toast.error(data?.error || "خطا در حذف ویژگی");
+      } else {
+        toast.error("خطا در ارتباط با سرور");
+      }
     }
   };
 
   const columns = [
     { key: "id", title: "شناسه", sortable: true },
-    { key: "title", title: "عنوان", sortable: true },
+    { key: "name", title: "نام", sortable: true },
+    { key: "slug", title: "اسلاگ", sortable: true },
     {
-      key: "type",
-      title: "نوع",
-      sortable: true,
-      render: (attribute: any) => {
-        const types: Record<string, string> = {
-          text: "متنی",
-          number: "عددی",
-          boolean: "بله/خیر",
-          select: "انتخابی",
-        };
-        return types[attribute.type] || attribute.type;
-      },
-    },
-    {
-      key: "is_active",
+      key: "enabled",
       title: "وضعیت",
       sortable: true,
-      render: (attribute: any) => (
-        <Badge className={attribute.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
-          {attribute.is_active ? "فعال" : "غیرفعال"}
+      render: (attr: Attribute) => (
+        <Badge
+          className={
+            attr.enabled
+              ? "bg-green-100 text-green-700"
+              : "bg-red-100 text-red-700"
+          }
+        >
+          {attr.enabled ? "فعال" : "غیرفعال"}
         </Badge>
       ),
     },
   ];
 
-  const renderActions = (attribute: any) => (
+  const renderActions = (attr: Attribute) => (
     <div className="flex justify-center gap-2">
-      <AppButton variant="ghost" size="icon" onClick={() => router.push(`/products/attributes/${attribute.id}`)}>
-        <Eye className="h-4 w-4" />
-      </AppButton>
-      <AppButton variant="ghost" size="icon" onClick={() => router.push(`/products/attributes/${attribute.id}/edit`)}>
+      <AppButton
+        variant="ghost"
+        size="icon"
+        onClick={() => router.push(`/products/attributes/${attr.id}/edit`)}
+      >
         <Pencil className="h-4 w-4" />
       </AppButton>
-      <AppButton variant="ghost" size="icon" onClick={() => handleDelete(attribute.id)}>
+      <AppButton
+        variant="ghost"
+        size="icon"
+        onClick={() => handleDelete(attr.id)}
+      >
         <Trash2 className="h-4 w-4 text-red-500" />
       </AppButton>
     </div>
   );
 
-  const filterFields: FilterField[] = [
-    { name: "title", label: "عنوان", type: "text" },
-    {
-      name: "type",
-      label: "نوع",
-      type: "select",
-      options: [
-        { value: "text", label: "متنی" },
-        { value: "number", label: "عددی" },
-        { value: "boolean", label: "بله/خیر" },
-        { value: "select", label: "انتخابی" },
-      ],
-    },
-    {
-      name: "status",
-      label: "وضعیت",
-      type: "select",
-      options: [
-        { id: "active", title: "فعال" },
-        { id: "inactive", title: "غیرفعال" },
-      ],
-      valueKey: "id",
-      labelKey: "title",
-    },
-  ];
-
   return (
     <div className="space-y-6">
-      <FilterBar fields={filterFields} onFilter={handleFilter} initialValues={filters} />
-
       <DataTable
         columns={columns}
         data={data?.attributes || []}
@@ -148,8 +179,14 @@ export default function AttributesPage() {
         pageSize={limit}
         currentPage={page}
         onPageChange={setPage}
-        onPageSizeChange={(size) => { setLimit(size); setPage(1); }}
-        onSort={(key, order) => { setSort({ key, order }); setPage(1); }}
+        onPageSizeChange={(size) => {
+          setLimit(size);
+          setPage(1);
+        }}
+        onSort={(key, order) => {
+          setSort({ key, order });
+          setPage(1);
+        }}
         sortKey={sort.key}
         sortOrder={sort.order}
         isLoading={isLoading}
@@ -157,10 +194,18 @@ export default function AttributesPage() {
         toolbarActions={
           <>
             <AppButton
+              variant="blue"
               onClick={() => router.push("/products/attributes/create")}
             >
               <Plus className="h-4 w-4" />
               ویژگی جدید
+            </AppButton>
+            <AppButton
+              variant="green"
+              onClick={() => exportToCSV(data?.attributes || [])}
+            >
+              <Download className="h-4 w-4" />
+              خروجی Excel
             </AppButton>
           </>
         }

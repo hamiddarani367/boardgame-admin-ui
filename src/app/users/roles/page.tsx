@@ -1,18 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useApiQuery, apiClient } from "@/hooks/useApi";
 import { DataTable } from "@/components/shared/DataTable";
 import { AppButton } from "@/components/shared/AppButton";
-import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import Swal from "sweetalert2";
 import { toast } from "sonner";
 import { AxiosError } from "axios";
 
-interface Role {
+// ==================== تایپ‌ها ====================
+export interface Role {
   id: number;
   name: string;
 }
@@ -22,21 +22,64 @@ interface RolesResponse {
   total: number;
 }
 
+interface SortState {
+  key: string;
+  order: "asc" | "desc";
+}
+
+// ==================== کامپوننت ====================
 export default function RolesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
-  const [sort, setSort] = useState<{ key: string; order: "asc" | "desc" }>({
-    key: "name",
-    order: "asc",
+
+  // خواندن پارامترها از URL
+  const initialPage = Number(searchParams.get("page")) || 1;
+  const initialLimit = Number(searchParams.get("limit")) || 10;
+  const initialSortBy = searchParams.get("sortBy") || "name";
+  const initialSortOrder =
+    (searchParams.get("sortOrder") as "asc" | "desc") || "asc";
+
+  const [page, setPage] = useState(initialPage);
+  const [limit, setLimit] = useState(initialLimit);
+  const [sort, setSort] = useState<SortState>({
+    key: initialSortBy,
+    order: initialSortOrder,
   });
 
+  // دریافت داده‌ها
   const { data, isLoading } = useApiQuery<RolesResponse>(
-    "/roles",
+    "/admin/roles",
     ["roles"],
-    { page, limit, sortBy: sort.key, sortOrder: sort.order }
+    {
+      page,
+      limit,
+      sortBy: sort.key,
+      sortOrder: sort.order,
+    }
   );
+
+  // به‌روزرسانی URL فقط با پارامترهای غیر پیش‌فرض
+  const updateURL = useCallback(
+    (p: number, l: number, s: SortState) => {
+      const params = new URLSearchParams();
+
+      if (p > 1) params.set("page", String(p));
+      if (l !== 10) params.set("limit", String(l));
+      if (s.key !== "name" || s.order !== "asc") {
+        params.set("sortBy", s.key);
+        params.set("sortOrder", s.order);
+      }
+
+      const qs = params.toString();
+      router.replace(`/users/roles${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    updateURL(page, limit, sort);
+  }, [page, limit, sort, updateURL]);
 
   const handleDelete = async (id: number) => {
     const result = await Swal.fire({
@@ -53,14 +96,15 @@ export default function RolesPage() {
     if (!result.isConfirmed) return;
 
     try {
-      await apiClient.delete(`/roles/${id}`);
+      // ✅ مسیر هماهنگ با useApiQuery
+      await apiClient.delete(`/admin/roles/${id}`);
       queryClient.invalidateQueries({ queryKey: ["roles"] });
       await queryClient.refetchQueries({ queryKey: ["roles"] });
       toast.success("نقش با موفقیت حذف شد");
     } catch (error) {
       if (error instanceof AxiosError) {
-        const data = error.response?.data as { error?: string } | undefined;
-        toast.error(data?.error || "خطا در حذف نقش");
+        const responseData = error.response?.data as { error?: string } | undefined;
+        toast.error(responseData?.error || "خطا در حذف نقش");
       } else {
         toast.error("خطا در ارتباط با سرور");
       }
@@ -93,6 +137,7 @@ export default function RolesPage() {
 
   return (
     <div className="space-y-6">
+      {/* ✅ عنوان صفحه */}
       <h1 className="text-2xl font-bold">نقش‌ها</h1>
 
       <DataTable

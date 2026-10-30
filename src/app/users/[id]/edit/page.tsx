@@ -26,7 +26,7 @@ export default function EditUserPage() {
   const userId = params.id as string;
 
   const { data: userData, isLoading, error } = useApiQuery<UserData>(
-    `/users/${userId}`,
+    `/admin/users/${userId}`,
     ["user", userId],
     undefined,
     { refetchOnMount: true }
@@ -43,7 +43,7 @@ export default function EditUserPage() {
       enabled: boolean;
       image: string | null;
     }
-  >(`/users/${userId}`, "PUT", ["users"]);
+  >(`/admin/users/${userId}`, "PUT", ["users"]);
 
   const handleUpdate = async (data: {
     first_name: string;
@@ -94,7 +94,6 @@ export default function EditUserPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">ویرایش کاربر</h1>
       <UserForm
         initialData={formInitialData}
         isEdit

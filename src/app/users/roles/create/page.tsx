@@ -9,7 +9,7 @@ import { AxiosError } from "axios";
 export default function CreateRolePage() {
   const router = useRouter();
   const createRole = useApiMutation<unknown, { name: string; permission_ids: number[] }>(
-    "/roles",
+    "/admin/roles",
     "POST",
     ["roles"]
   );

@@ -1,56 +1,83 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ProductForm } from "@/components/forms/ProductForm";
+import { useApiQuery, useApiMutation } from "@/hooks/useApi";
 import { Loader2 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { AxiosError } from "axios";
+
+// تایپ payload ارسالی
+interface ProductSubmitData {
+  name: string;
+  persian_title: string | null;
+  description: string | null;
+  full_description: string | null;
+  price: number;
+  discounted_price: number | null;
+  category_id: number;
+  image: string | null;
+  images: string[];
+  tags: string[];
+  stock_count: number;
+  enabled: boolean;
+  attribute_values: {
+    attribute_id: number;
+    value: string;
+  }[];
+}
+
+// تایپ داده دریافتی از API برای ویرایش
+interface Product {
+  id: number;
+  name: string;
+  persian_title?: string;
+  description?: string;
+  full_description?: string;
+  price: number;
+  discounted_price?: number | null;
+  category_id: number;
+  image?: string;
+  images: string[];
+  tags: string[];
+  stock_count: number;
+  enabled: boolean;
+  attribute_values?: ProductSubmitData["attribute_values"];
+}
 
 export default function EditProductPage() {
   const params = useParams();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const productId = params.id as string;
 
-  const [productData, setProductData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: productData,
+    isLoading,
+    error,
+  } = useApiQuery<Product>(`/admin/products/${productId}`, ["product", productId]);
 
-  useEffect(() => {
-    const fetchProduct = async () => {
-      try {
-        const res = await fetch(`/api/products/${productId}`, { cache: "no-store" });
-        if (!res.ok) throw new Error("محصول یافت نشد");
-        const data = await res.json();
-        setProductData(data.product);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
+  const updateProduct = useApiMutation<unknown, ProductSubmitData>(
+    `/admin/products/${productId}`,
+    "PUT",
+    ["products"]
+  );
+
+  const handleUpdate = async (data: ProductSubmitData) => {
+    try {
+      await updateProduct.mutateAsync(data);
+      toast.success("محصول با موفقیت ویرایش شد");
+      router.push("/products");
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const responseData = error.response?.data as { error?: string } | undefined;
+        toast.error(responseData?.error || "خطا در ویرایش محصول");
+      } else {
+        toast.error("خطا در ویرایش محصول");
       }
-    };
-    fetchProduct();
-  }, [productId]);
-
-  const handleUpdate = async (data: any) => {
-    const res = await fetch(`/api/products/${productId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error || "خطا در ویرایش محصول");
-      return;
     }
-
-    queryClient.invalidateQueries({ queryKey: ["products"] });
-    await queryClient.refetchQueries({ queryKey: ["products"] });
-    router.push("/products");
-    router.refresh();
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -58,10 +85,17 @@ export default function EditProductPage() {
     );
   }
 
+  if (error || !productData) {
+    return <div className="text-red-500">خطا در دریافت اطلاعات</div>;
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">ویرایش محصول</h1>
-      <ProductForm initialData={productData} isEdit onSubmit={handleUpdate} />
+      <ProductForm
+        initialData={productData}
+        isEdit
+        onSubmit={handleUpdate}
+      />
     </div>
   );
 }
